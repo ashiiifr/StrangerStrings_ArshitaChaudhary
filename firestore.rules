@@ -22,6 +22,7 @@ service cloud.firestore {
           'lastName',
           'username',
           'age',
+          'dobMillis',
           'heightCm',
           'weightKg',
           'gender',
@@ -38,6 +39,8 @@ service cloud.firestore {
         && request.resource.data.age is int
         && request.resource.data.age >= 10
         && request.resource.data.age <= 120
+        && request.resource.data.dobMillis is int
+        && request.resource.data.dobMillis > 0
         && request.resource.data.heightCm is number
         && request.resource.data.heightCm >= 50
         && request.resource.data.heightCm <= 250

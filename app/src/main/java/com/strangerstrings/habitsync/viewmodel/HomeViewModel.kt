@@ -3,8 +3,12 @@ package com.strangerstrings.habitsync.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.strangerstrings.habitsync.data.Habit
+import com.strangerstrings.habitsync.data.HabitCategory
+import com.strangerstrings.habitsync.data.HabitVisibility
 import com.strangerstrings.habitsync.data.repository.AuthRepository
 import com.strangerstrings.habitsync.data.repository.FirebaseHabitRepository
+import com.strangerstrings.habitsync.data.repository.ProfileRepository
+import com.strangerstrings.habitsync.data.repository.ReminderRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,20 +22,28 @@ data class HomeUiState(
     val isLoading: Boolean = false,
     val habits: List<Habit> = emptyList(),
     val errorMessage: String? = null,
+    val infoMessage: String? = null,
     val userId: String = "",
     val uploadingHabitId: String? = null,
+    val freezeTokensThisMonth: Int = 2,
 )
 
 class HomeViewModel(
     private val authRepository: AuthRepository = AuthRepository(),
     private val habitRepository: FirebaseHabitRepository = FirebaseHabitRepository(),
+    private val profileRepository: ProfileRepository = ProfileRepository(),
+    private val reminderRepository: ReminderRepository = ReminderRepository(),
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState(isLoading = true))
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     init {
+        viewModelScope.launch {
+            runCatching { profileRepository.syncFreezeTokensForCurrentMonth() }
+        }
         observeHabits()
+        observeProfile()
     }
 
     fun addHabit() {
@@ -50,6 +62,9 @@ class HomeViewModel(
                     streak = 0,
                     isCompletedToday = false,
                     lastCompletedDate = null,
+                    category = HabitCategory.CUSTOM,
+                    visibility = HabitVisibility.PRIVATE,
+                    completionDates = emptyList(),
                 )
                 habitRepository.addHabit(newHabit)
             }.onFailure { error ->
@@ -71,18 +86,44 @@ class HomeViewModel(
         if (currentHabit.isCompletedToday) return
 
         viewModelScope.launch {
-            _uiState.update { it.copy(uploadingHabitId = habitId, errorMessage = null) }
+            _uiState.update { it.copy(uploadingHabitId = habitId, errorMessage = null, infoMessage = null) }
             runCatching {
+                val today = currentEpochDay()
+                val latestDay = currentHabit.completionDates.maxOrNull()
+                val freezeProtected = latestDay == today - 2 && profileRepository.consumeFreezeTokenIfAvailable()
+                val nextStreak = when {
+                    currentHabit.completionDates.contains(today) -> currentHabit.streak
+                    latestDay == null -> 1
+                    latestDay == today - 1 -> currentHabit.streak + 1
+                    freezeProtected -> currentHabit.streak + 1
+                    else -> 1
+                }
+                val updatedCompletions = (currentHabit.completionDates + today)
+                    .distinct()
+                    .sorted()
+                val updatedCompletionTimestamps = (currentHabit.completionTimestamps + System.currentTimeMillis())
+                    .sorted()
                 val updatedHabit = currentHabit.copy(
-                    streak = currentHabit.streak + 1,
+                    streak = nextStreak,
                     isCompletedToday = true,
-                    lastCompletedDate = currentEpochDay(),
+                    lastCompletedDate = today,
                     proofImageUrl = null,
+                    completionDates = updatedCompletions,
+                    completionTimestamps = updatedCompletionTimestamps,
                 )
                 habitRepository.updateHabit(
                     habit = updatedHabit,
                     proofImageBytes = proofImageBytes,
                 )
+
+                if (freezeProtected) {
+                    _uiState.update {
+                        it.copy(
+                            infoMessage = "Streak protected using 1 freeze token.",
+                            freezeTokensThisMonth = (it.freezeTokensThisMonth - 1).coerceAtLeast(0),
+                        )
+                    }
+                }
             }.onFailure { error ->
                 _uiState.update { current ->
                     current.copy(errorMessage = error.message ?: "Failed to mark habit as done.")
@@ -122,11 +163,28 @@ class HomeViewModel(
                     }
                 }
                 .collect { habits ->
+                    runCatching {
+                        reminderRepository.maybeSendEveningReminder(habits)
+                    }
                     _uiState.update { current ->
                         current.copy(
                             isLoading = false,
                             habits = habits,
                             errorMessage = null,
+                        )
+                    }
+                }
+        }
+    }
+
+    private fun observeProfile() {
+        viewModelScope.launch {
+            profileRepository.observeMyProfile()
+                .catch { }
+                .collect { profile ->
+                    _uiState.update { current ->
+                        current.copy(
+                            freezeTokensThisMonth = profile?.freezeTokensThisMonth ?: current.freezeTokensThisMonth,
                         )
                     }
                 }

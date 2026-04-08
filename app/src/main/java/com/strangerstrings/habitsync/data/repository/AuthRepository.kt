@@ -12,6 +12,7 @@ data class SignUpRequest(
     val lastName: String,
     val username: String,
     val age: Int,
+    val dobMillis: Long,
     val heightCm: Float,
     val weightKg: Float,
     val gender: String,
@@ -63,6 +64,7 @@ class AuthRepository(
                         FIELD_LAST_NAME to request.lastName.trim(),
                         FIELD_USERNAME to username,
                         FIELD_AGE to request.age,
+                        FIELD_DOB_MILLIS to request.dobMillis,
                         FIELD_HEIGHT_CM to request.heightCm,
                         FIELD_WEIGHT_KG to request.weightKg,
                         FIELD_GENDER to request.gender,
@@ -88,6 +90,47 @@ class AuthRepository(
         }
 
         userId
+    }
+
+    suspend fun isUsernameAvailable(username: String): Result<Boolean> = runCatching {
+        val normalized = username.trim().lowercase()
+        if (normalized.isBlank()) return@runCatching false
+        val usernameDoc = firestore.collection(USERNAMES_COLLECTION).document(normalized).get().await()
+        !usernameDoc.exists()
+    }
+
+    suspend fun isEmailAvailable(email: String): Result<Boolean> = runCatching {
+        val normalized = email.trim()
+        if (normalized.isBlank()) return@runCatching false
+        val methods = firebaseAuth.fetchSignInMethodsForEmail(normalized).await().signInMethods.orEmpty()
+        methods.isEmpty()
+    }
+
+    suspend fun verifyRecoveryInfo(
+        email: String,
+        username: String,
+        dobMillis: Long,
+    ): Result<Boolean> = runCatching {
+        val normalizedEmail = email.trim()
+        val normalizedUsername = username.trim().lowercase()
+        if (normalizedEmail.isBlank() || normalizedUsername.isBlank()) return@runCatching false
+
+        val usernameDoc = firestore.collection(USERNAMES_COLLECTION).document(normalizedUsername).get().await()
+        val userId = usernameDoc.getString(FIELD_USER_ID).orEmpty()
+        if (userId.isBlank()) return@runCatching false
+
+        val userDoc = firestore.collection(USERS_COLLECTION).document(userId).get().await()
+        if (!userDoc.exists()) return@runCatching false
+
+        val storedEmail = userDoc.getString(FIELD_EMAIL).orEmpty()
+        if (!storedEmail.equals(normalizedEmail, ignoreCase = true)) return@runCatching false
+
+        val storedDobMillis = userDoc.getLong(FIELD_DOB_MILLIS) ?: return@runCatching false
+        sameEpochDay(storedDobMillis, dobMillis)
+    }
+
+    suspend fun sendPasswordResetEmail(email: String): Result<Unit> = runCatching {
+        firebaseAuth.sendPasswordResetEmail(email.trim()).await()
     }
 
     fun signOut() {
@@ -120,6 +163,7 @@ class AuthRepository(
         const val FIELD_LAST_NAME = "lastName"
         const val FIELD_USERNAME = "username"
         const val FIELD_AGE = "age"
+        const val FIELD_DOB_MILLIS = "dobMillis"
         const val FIELD_HEIGHT_CM = "heightCm"
         const val FIELD_WEIGHT_KG = "weightKg"
         const val FIELD_GENDER = "gender"
@@ -127,5 +171,10 @@ class AuthRepository(
         const val FIELD_DISPLAY_NAME = "displayName"
         const val FIELD_CREATED_AT = "createdAt"
         const val FIELD_UPDATED_AT = "updatedAt"
+        const val MILLIS_PER_DAY = 24L * 60L * 60L * 1000L
+    }
+
+    private fun sameEpochDay(first: Long, second: Long): Boolean {
+        return first / MILLIS_PER_DAY == second / MILLIS_PER_DAY
     }
 }

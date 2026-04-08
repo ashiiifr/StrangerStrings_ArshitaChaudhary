@@ -10,16 +10,20 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AutoGraph
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Image
@@ -27,81 +31,65 @@ import androidx.compose.material.icons.filled.SelfImprovement
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.airbnb.lottie.compose.LottieAnimation
 import com.airbnb.lottie.compose.LottieCompositionSpec
 import com.airbnb.lottie.compose.animateLottieCompositionAsState
 import com.airbnb.lottie.compose.rememberLottieComposition
 import com.strangerstrings.habitsync.viewmodel.OnboardingUiState
+import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
 
 private data class OnboardingPage(
     val title: String,
     val subtitle: String,
     val lottieUrl: String,
-    val keywordHint: String,
     val fallbackIcon: ImageVector,
 )
 
-private val onboardingPages = listOf(
+private val pages = listOf(
     OnboardingPage(
-        title = "Build Habits That Actually Stick",
-        subtitle = "Create meaningful routines, track momentum daily, and stay consistent with visual progress.",
+        title = "Design Better Days With Small Daily Wins",
+        subtitle = "Track meaningful habits and keep your momentum visible every single day.",
         lottieUrl = "https://lottie.host/4cf6d68e-7197-4b01-b7cb-7948a98fb54a/N5m0wLa8cv.json",
-        keywordHint = "habit tracking animation",
         fallbackIcon = Icons.Default.AutoGraph,
     ),
     OnboardingPage(
-        title = "Proof-Based Accountability",
-        subtitle = "Attach quick photo proof to your completions and make every streak truly credible.",
+        title = "Stay Honest With Proof-Backed Check-ins",
+        subtitle = "Attach quick photo proof so each streak reflects real consistency.",
         lottieUrl = "https://lottie.host/9f69b74c-078b-447d-aa8a-033f8dfb4fdb/wXGndv0o2A.json",
-        keywordHint = "goal progress animation",
         fallbackIcon = Icons.Default.Image,
     ),
     OnboardingPage(
-        title = "Compete On Real Leaderboards",
-        subtitle = "Climb rankings through consistency and challenge friends to stay ahead every week.",
+        title = "Compete On Leaderboards And Keep Climbing",
+        subtitle = "Challenge friends, build score, and rise with disciplined action.",
         lottieUrl = "https://lottie.host/ce2f1db6-f7d4-42b4-a5d4-b4a67f8fec4e/JzebQ7QjJR.json",
-        keywordHint = "leaderboard animation",
         fallbackIcon = Icons.Default.EmojiEvents,
     ),
     OnboardingPage(
-        title = "See Every Win In Your Feed",
-        subtitle = "Get a live social feed of milestones, streaks, and proof-backed achievements.",
-        lottieUrl = "https://lottie.host/4f94f35d-9829-451f-87b6-d4f1f8f26771/4PjL1fJdvS.json",
-        keywordHint = "success achievement animation",
-        fallbackIcon = Icons.Default.EmojiEvents,
-    ),
-    OnboardingPage(
-        title = "Improve One Day At A Time",
-        subtitle = "Small daily actions compound into stronger discipline, confidence, and long-term growth.",
+        title = "Build A Stronger Version Of Yourself",
+        subtitle = "HabitSync helps consistency feel social, fun, and sustainable.",
         lottieUrl = "https://lottie.host/e4ecf96f-fc3f-4a48-8cb4-c3a47ec95bf2/kM5dix0ehX.json",
-        keywordHint = "self improvement animation",
         fallbackIcon = Icons.Default.SelfImprovement,
-    ),
-    OnboardingPage(
-        title = "Ready To Start Your Streak?",
-        subtitle = "Join HabitSync and turn your goals into measurable, competitive results.",
-        lottieUrl = "https://lottie.host/1175d8f9-8f44-40ef-95dc-2526f4ad6cf6/i7yX2lAN8u.json",
-        keywordHint = "habit success animation",
-        fallbackIcon = Icons.Default.AutoGraph,
     ),
 )
 
@@ -113,9 +101,10 @@ fun OnboardingScreen(
     onGetStartedClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val pagerState = rememberPagerState(pageCount = { onboardingPages.size })
-    val isLastPage = pagerState.currentPage == onboardingPages.lastIndex
+    val pagerState = rememberPagerState(pageCount = { pages.size })
+    val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
+    val isLastPage = pagerState.currentPage == pages.lastIndex
 
     Box(
         modifier = modifier
@@ -136,7 +125,8 @@ fun OnboardingScreen(
             },
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(top = 18.dp, end = 14.dp),
+                .statusBarsPadding()
+                .padding(top = 8.dp, end = 14.dp),
         ) {
             Text(
                 text = "Skip",
@@ -149,83 +139,68 @@ fun OnboardingScreen(
             state = pagerState,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 24.dp, vertical = 56.dp),
+                .padding(horizontal = 20.dp)
+                .statusBarsPadding()
+                .padding(top = 48.dp)
+                .navigationBarsPadding(),
         ) { page ->
-            val pageData = onboardingPages[page]
+            val pageData = pages[page]
             val pageOffset = (
                 (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
                 ).absoluteValue
 
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        alpha = (1f - pageOffset.coerceAtMost(1f) * 0.24f)
-                        translationX = pageOffset * 72f
-                    },
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.Start,
             ) {
-                OnboardingIllustration(
-                    pageData = pageData,
-                    pageOffset = pageOffset,
-                )
+                Surface(
+                    shape = RoundedCornerShape(34.dp),
+                    tonalElevation = 8.dp,
+                    shadowElevation = 2.dp,
+                    color = MaterialTheme.colorScheme.surface,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                ) {
+                    OnboardingIllustration(
+                        pageData = pageData,
+                        pageOffset = pageOffset,
+                    )
+                }
 
                 Text(
                     text = pageData.title,
-                    style = MaterialTheme.typography.headlineLarge,
+                    style = MaterialTheme.typography.headlineLarge.copy(
+                        fontWeight = FontWeight.ExtraBold,
+                        lineHeight = 42.sp,
+                        letterSpacing = (-0.2).sp,
+                    ),
                     color = MaterialTheme.colorScheme.onBackground,
-                    fontWeight = FontWeight.ExtraBold,
-                    modifier = Modifier.padding(top = 28.dp),
+                    modifier = Modifier.padding(top = 20.dp),
                 )
                 Text(
                     text = pageData.subtitle,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.92f),
-                    modifier = Modifier
-                        .padding(top = 12.dp)
-                        .fillMaxWidth(0.9f),
+                    style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 10.dp),
                 )
+                Spacer(modifier = Modifier.height(128.dp))
             }
         }
 
-        Column(
+        Row(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 26.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 20.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            ExpandingDotsIndicator(
-                pageCount = onboardingPages.size,
+            PagerIndicator(
+                pageCount = pages.size,
                 currentPage = pagerState.currentPage,
-                modifier = Modifier.padding(bottom = 14.dp),
+                modifier = Modifier.weight(1f),
             )
-
-            val progressTarget = (pagerState.currentPage + 1f) / onboardingPages.size.toFloat()
-            val progress by animateFloatAsState(
-                targetValue = progressTarget,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessLow,
-                ),
-                label = "onboarding_progress",
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(progress)
-                        .height(4.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary),
-                )
-            }
 
             if (isLastPage) {
                 val buttonScale by animateFloatAsState(
@@ -242,15 +217,9 @@ fun OnboardingScreen(
                         onGetStartedClick()
                     },
                     enabled = !uiState.isSaving,
-                    shape = RoundedCornerShape(22.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                    ),
+                    shape = RoundedCornerShape(18.dp),
                     modifier = Modifier
-                        .padding(top = 18.dp)
-                        .fillMaxWidth()
-                        .height(58.dp)
+                        .height(52.dp)
                         .scale(buttonScale),
                 ) {
                     if (uiState.isSaving) {
@@ -260,29 +229,28 @@ fun OnboardingScreen(
                             color = MaterialTheme.colorScheme.onPrimary,
                         )
                     } else {
-                        Text(
-                            text = "Let's Go",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
+                        Text("Get Started")
                     }
                 }
             } else {
-                Text(
-                    text = "Swipe to continue",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 18.dp),
-                )
-            }
-
-            uiState.errorMessage?.let { message ->
-                Text(
-                    text = message,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(top = 10.dp),
-                )
+                IconButton(
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        scope.launch {
+                            pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                        }
+                    },
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary),
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = "Next",
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                    )
+                }
             }
         }
     }
@@ -294,20 +262,19 @@ private fun OnboardingIllustration(
     pageOffset: Float,
 ) {
     val composition by rememberLottieComposition(LottieCompositionSpec.Url(pageData.lottieUrl))
-    val lottieProgress by animateLottieCompositionAsState(
+    val progress by animateLottieCompositionAsState(
         composition = composition,
         iterations = Int.MAX_VALUE,
     )
 
     Box(
         modifier = Modifier
-            .size(280.dp)
-            .clip(RoundedCornerShape(30.dp))
+            .fillMaxSize()
             .background(
                 brush = Brush.linearGradient(
                     colors = listOf(
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
-                        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f),
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.95f),
+                        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.88f),
                     ),
                 ),
             ),
@@ -316,36 +283,24 @@ private fun OnboardingIllustration(
         if (composition != null) {
             LottieAnimation(
                 composition = composition,
-                progress = { lottieProgress },
+                progress = { progress },
                 modifier = Modifier
                     .fillMaxSize(0.88f)
-                    .graphicsLayer {
-                        translationX = pageOffset * 28f
-                        scaleX = 1f - (pageOffset * 0.06f)
-                        scaleY = 1f - (pageOffset * 0.06f)
-                    },
+                    .scale(1f - (pageOffset * 0.04f)),
             )
         } else {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                androidx.compose.material3.Icon(
-                    imageVector = pageData.fallbackIcon,
-                    contentDescription = pageData.keywordHint,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(82.dp),
-                )
-                Text(
-                    text = pageData.keywordHint,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-            }
+            Icon(
+                imageVector = pageData.fallbackIcon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(92.dp),
+            )
         }
     }
 }
 
 @Composable
-private fun ExpandingDotsIndicator(
+private fun PagerIndicator(
     pageCount: Int,
     currentPage: Int,
     modifier: Modifier = Modifier,
@@ -357,24 +312,22 @@ private fun ExpandingDotsIndicator(
     ) {
         repeat(pageCount) { index ->
             val selected = index == currentPage
-            val dotWidth by animateDpAsState(
+            val width by animateDpAsState(
                 targetValue = if (selected) 24.dp else 8.dp,
                 animationSpec = spring(
                     dampingRatio = Spring.DampingRatioMediumBouncy,
                     stiffness = Spring.StiffnessLow,
                 ),
-                label = "onboarding_indicator_width_$index",
+                label = "onboarding_dot_$index",
             )
-            val dotColor = if (selected) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.34f)
-            }
             Box(
                 modifier = Modifier
-                    .size(width = dotWidth, height = 8.dp)
+                    .size(width = width, height = 8.dp)
                     .clip(CircleShape)
-                    .background(dotColor),
+                    .background(
+                        if (selected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                    ),
             )
         }
     }

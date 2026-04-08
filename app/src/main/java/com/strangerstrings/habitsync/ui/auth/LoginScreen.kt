@@ -1,14 +1,7 @@
 package com.strangerstrings.habitsync.ui.auth
 
+import android.text.format.DateFormat
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,7 +27,9 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -44,10 +39,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -61,6 +60,9 @@ import com.strangerstrings.habitsync.ui.theme.HabitSyncTheme
 import com.strangerstrings.habitsync.viewmodel.AuthMode
 import com.strangerstrings.habitsync.viewmodel.AuthUiState
 import com.strangerstrings.habitsync.viewmodel.PasswordStrength
+import java.util.Date
+
+private enum class SignUpStep { FirstName, LastName, Username, Gender, Dob, Height, Weight, Email, Password, ConfirmPassword }
 
 @Composable
 fun LoginScreen(
@@ -69,488 +71,231 @@ fun LoginScreen(
     onFirstNameChange: (String) -> Unit,
     onLastNameChange: (String) -> Unit,
     onUsernameChange: (String) -> Unit,
-    onAgeChange: (String) -> Unit,
+    onDateOfBirthSelected: (Long?) -> Unit,
     onHeightChange: (String) -> Unit,
     onWeightChange: (String) -> Unit,
     onGenderChange: (String) -> Unit,
     onEmailChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onConfirmPasswordChange: (String) -> Unit,
+    onForgotPasswordClick: () -> Unit,
     onTogglePasswordVisibility: () -> Unit,
     onToggleConfirmPasswordVisibility: () -> Unit,
     onSubmit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val scrollState = rememberScrollState()
-    val buttonScale by animateFloatAsState(
-        targetValue = if (uiState.isLoading) 0.98f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMediumLow,
-        ),
-        label = "auth_button_scale",
-    )
+    Column(
+        modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).verticalScroll(rememberScrollState()).padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(modifier = Modifier.size(46.dp).clip(CircleShape).background(Brush.radialGradient(listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)))))
+        Text(if (uiState.mode == AuthMode.SIGN_IN) "Login your account" else "Create your account", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
+        Text("Secure and personalized setup", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+        Spacer(Modifier.height(18.dp))
+        Row(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceContainerLow).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ToggleChip("Sign In", uiState.mode == AuthMode.SIGN_IN, Modifier.weight(1f)) { onSwitchMode(AuthMode.SIGN_IN) }
+            ToggleChip("Sign Up", uiState.mode == AuthMode.SIGN_UP, Modifier.weight(1f)) { onSwitchMode(AuthMode.SIGN_UP) }
+        }
+        Spacer(Modifier.height(18.dp))
+        AnimatedContent(uiState.mode, label = "mode") { mode ->
+            if (mode == AuthMode.SIGN_IN) {
+                SignInPart(uiState, onEmailChange, onPasswordChange, onTogglePasswordVisibility, onForgotPasswordClick, onSubmit)
+            } else {
+                SignUpPart(uiState, onFirstNameChange, onLastNameChange, onUsernameChange, onDateOfBirthSelected, onHeightChange, onWeightChange, onGenderChange, onEmailChange, onPasswordChange, onConfirmPasswordChange, onTogglePasswordVisibility, onToggleConfirmPasswordVisibility, onSubmit)
+            }
+        }
+        uiState.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 12.dp)) }
+    }
+}
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.background,
-                        MaterialTheme.colorScheme.surfaceContainerLow,
-                    ),
-                ),
-            )
-            .padding(horizontal = 20.dp, vertical = 12.dp),
+@Composable
+private fun ToggleChip(text: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    Button(onClick = onClick, modifier = modifier.height(40.dp), shape = RoundedCornerShape(10.dp), colors = ButtonDefaults.buttonColors(containerColor = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent, contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant), elevation = ButtonDefaults.buttonElevation(0.dp)) { Text(text) }
+}
+
+@Composable
+private fun SignInPart(
+    ui: AuthUiState,
+    onEmail: (String) -> Unit,
+    onPassword: (String) -> Unit,
+    onTogglePassword: () -> Unit,
+    onForgotPasswordClick: () -> Unit,
+    onSubmit: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(scrollState),
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Spacer(modifier = Modifier.height(20.dp))
-            Text(
-                text = "HabitSync",
-                style = MaterialTheme.typography.headlineLarge,
-                color = MaterialTheme.colorScheme.onBackground,
-                fontWeight = FontWeight.ExtraBold,
-            )
-            Text(
-                text = "Consistency, proof, and competition in one place.",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp),
-            )
+            AppField(ui.email, onEmail, "Email", KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next), leading = { Icon(Icons.Default.Email, null) }, isError = ui.emailValidationError != null, help = ui.emailValidationError)
+            AppField(ui.password, onPassword, "Password", KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done), if (ui.passwordVisible) VisualTransformation.None else PasswordVisualTransformation(), leading = { Icon(Icons.Default.Lock, null) }, trailing = { IconButton(onTogglePassword) { Icon(if (ui.passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility, null) } })
+            TextButton(onForgotPasswordClick, modifier = Modifier.align(Alignment.End)) { Text("Forgot password?") }
+            SubmitButton(ui.isLoading, "Sign In", onSubmit)
+        }
+    }
+}
 
-            Surface(
-                shape = RoundedCornerShape(30.dp),
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 8.dp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 18.dp),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                ) {
-                    AuthModeSwitch(
-                        selectedMode = uiState.mode,
-                        onModeSelected = onSwitchMode,
-                    )
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    AnimatedContent(
-                        targetState = uiState.mode,
-                        label = "auth_mode_content",
-                    ) { mode ->
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            if (mode == AuthMode.SIGN_UP) {
-                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    AuthTextField(
-                                        value = uiState.firstName,
-                                        onValueChange = onFirstNameChange,
-                                        label = "First name",
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    AuthTextField(
-                                        value = uiState.lastName,
-                                        onValueChange = onLastNameChange,
-                                        label = "Last name",
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                }
-                                AuthTextField(
-                                    value = uiState.username,
-                                    onValueChange = onUsernameChange,
-                                    label = "Username",
-                                    supportingText = "${uiState.username.length}/12 · lowercase + numbers",
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = Icons.Default.Person,
-                                            contentDescription = null,
-                                        )
-                                    },
-                                )
-                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    AuthTextField(
-                                        value = uiState.age,
-                                        onValueChange = onAgeChange,
-                                        label = "Age",
-                                        keyboardOptions = KeyboardOptions(
-                                            keyboardType = KeyboardType.Number,
-                                            imeAction = ImeAction.Next,
-                                        ),
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    AuthTextField(
-                                        value = uiState.heightCm,
-                                        onValueChange = onHeightChange,
-                                        label = "Height (cm)",
-                                        keyboardOptions = KeyboardOptions(
-                                            keyboardType = KeyboardType.Decimal,
-                                            imeAction = ImeAction.Next,
-                                        ),
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    AuthTextField(
-                                        value = uiState.weightKg,
-                                        onValueChange = onWeightChange,
-                                        label = "Weight (kg)",
-                                        keyboardOptions = KeyboardOptions(
-                                            keyboardType = KeyboardType.Decimal,
-                                            imeAction = ImeAction.Next,
-                                        ),
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                }
-                                GenderSelector(
-                                    selectedGender = uiState.gender,
-                                    onGenderChange = onGenderChange,
-                                )
-                            }
-
-                            AuthTextField(
-                                value = uiState.email,
-                                onValueChange = onEmailChange,
-                                label = "Email",
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Email,
-                                    imeAction = ImeAction.Next,
-                                ),
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Default.Email,
-                                        contentDescription = null,
-                                    )
-                                },
-                            )
-
-                            AuthTextField(
-                                value = uiState.password,
-                                onValueChange = onPasswordChange,
-                                label = "Password",
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Password,
-                                    imeAction = if (mode == AuthMode.SIGN_UP) ImeAction.Next else ImeAction.Done,
-                                ),
-                                visualTransformation = if (uiState.passwordVisible) {
-                                    VisualTransformation.None
-                                } else {
-                                    PasswordVisualTransformation()
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Default.Lock,
-                                        contentDescription = null,
-                                    )
-                                },
-                                trailingIcon = {
-                                    IconButton(onClick = onTogglePasswordVisibility) {
-                                        Icon(
-                                            imageVector = if (uiState.passwordVisible) {
-                                                Icons.Default.VisibilityOff
-                                            } else {
-                                                Icons.Default.Visibility
-                                            },
-                                            contentDescription = "Toggle password visibility",
-                                        )
-                                    }
-                                },
-                            )
-
-                            AnimatedVisibility(
-                                visible = mode == AuthMode.SIGN_UP,
-                                enter = fadeIn() + slideInVertically(initialOffsetY = { it / 5 }),
-                                exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 5 }),
-                            ) {
-                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    PasswordStrengthIndicator(strength = uiState.passwordStrength)
-                                    AuthTextField(
-                                        value = uiState.confirmPassword,
-                                        onValueChange = onConfirmPasswordChange,
-                                        label = "Confirm password",
-                                        keyboardOptions = KeyboardOptions(
-                                            keyboardType = KeyboardType.Password,
-                                            imeAction = ImeAction.Done,
-                                        ),
-                                        visualTransformation = if (uiState.confirmPasswordVisible) {
-                                            VisualTransformation.None
-                                        } else {
-                                            PasswordVisualTransformation()
-                                        },
-                                        leadingIcon = {
-                                            Icon(
-                                                imageVector = Icons.Default.Lock,
-                                                contentDescription = null,
-                                            )
-                                        },
-                                        trailingIcon = {
-                                            IconButton(onClick = onToggleConfirmPasswordVisibility) {
-                                                Icon(
-                                                    imageVector = if (uiState.confirmPasswordVisible) {
-                                                        Icons.Default.VisibilityOff
-                                                    } else {
-                                                        Icons.Default.Visibility
-                                                    },
-                                                    contentDescription = "Toggle confirm password visibility",
-                                                )
-                                            }
-                                        },
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    Button(
-                        onClick = onSubmit,
-                        enabled = !uiState.isLoading,
-                        shape = RoundedCornerShape(18.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary,
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 16.dp)
-                            .height(54.dp)
-                            .scale(buttonScale),
-                    ) {
-                        if (uiState.isLoading) {
-                            CircularProgressIndicator(
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        } else {
-                            Text(
-                                text = if (uiState.mode == AuthMode.SIGN_IN) "Sign In" else "Create Account",
-                                style = MaterialTheme.typography.titleMedium,
-                            )
-                        }
-                    }
-
-                    uiState.errorMessage?.let { error ->
-                        Text(
-                            text = error,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier
-                                .padding(top = 10.dp)
-                                .fillMaxWidth(),
-                        )
-                    }
-
-                    TextButton(
-                        onClick = {
-                            onSwitchMode(
-                                if (uiState.mode == AuthMode.SIGN_IN) AuthMode.SIGN_UP else AuthMode.SIGN_IN,
-                            )
-                        },
-                        modifier = Modifier.align(Alignment.CenterHorizontally),
-                    ) {
-                        val label = if (uiState.mode == AuthMode.SIGN_IN) {
-                            "New here? Create account"
-                        } else {
-                            "Already have an account? Sign in"
-                        }
-                        Text(label)
-                    }
+@Composable
+private fun SignUpPart(
+    ui: AuthUiState,
+    onFirst: (String) -> Unit,
+    onLast: (String) -> Unit,
+    onUser: (String) -> Unit,
+    onDob: (Long?) -> Unit,
+    onHeight: (String) -> Unit,
+    onWeight: (String) -> Unit,
+    onGender: (String) -> Unit,
+    onEmail: (String) -> Unit,
+    onPassword: (String) -> Unit,
+    onConfirm: (String) -> Unit,
+    onTogglePassword: () -> Unit,
+    onToggleConfirm: () -> Unit,
+    onSubmit: () -> Unit,
+) {
+    val steps = SignUpStep.entries
+    var idx by rememberSaveable { mutableIntStateOf(0) }
+    val step = steps[idx]
+    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 6.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            WizardProgressBar(progress = (idx + 1f) / steps.size.toFloat())
+            when (step) {
+                SignUpStep.FirstName -> AppField(ui.firstName, onFirst, "First name", leading = { Icon(Icons.Default.Person, null) })
+                SignUpStep.LastName -> AppField(ui.lastName, onLast, "Last name", leading = { Icon(Icons.Default.Person, null) })
+                SignUpStep.Username -> AppField(ui.username, onUser, "Username", leading = { Icon(Icons.Default.Person, null) }, isError = ui.usernameValidationError != null && !ui.isCheckingUsername, help = if (ui.isCheckingUsername) "Checking availability..." else ui.usernameValidationError ?: "${ui.username.length}/12")
+                SignUpStep.Gender -> GenderRows(ui.gender, onGender)
+                SignUpStep.Dob -> DobStep(ui.dobMillis, ui.ageYears, onDob)
+                SignUpStep.Height -> NumStep("Height", ui.heightCm.toIntOrNull() ?: 170, "cm", 120, 220) { onHeight(it.toString()) }
+                SignUpStep.Weight -> NumStep("Weight", ui.weightKg.toIntOrNull() ?: 65, "kg", 30, 200) { onWeight(it.toString()) }
+                SignUpStep.Email -> AppField(ui.email, onEmail, "Email", KeyboardOptions(keyboardType = KeyboardType.Email), leading = { Icon(Icons.Default.Email, null) }, isError = ui.emailValidationError != null, help = ui.emailValidationError)
+                SignUpStep.Password -> {
+                    AppField(ui.password, onPassword, "Password", KeyboardOptions(keyboardType = KeyboardType.Password), if (ui.passwordVisible) VisualTransformation.None else PasswordVisualTransformation(), leading = { Icon(Icons.Default.Lock, null) }, trailing = { IconButton(onTogglePassword) { Icon(if (ui.passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility, null) } })
+                    PassBar(ui.passwordStrength)
+                }
+                SignUpStep.ConfirmPassword -> AppField(ui.confirmPassword, onConfirm, "Confirm password", KeyboardOptions(keyboardType = KeyboardType.Password), if (ui.confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(), leading = { Icon(Icons.Default.Lock, null) }, trailing = { IconButton(onToggleConfirm) { Icon(if (ui.confirmPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility, null) } }, isError = ui.confirmPasswordError != null, help = ui.confirmPasswordError)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton({ if (idx > 0) idx-- }, enabled = idx > 0, modifier = Modifier.weight(1f)) { Text("Back") }
+                Button(onClick = { if (idx == steps.lastIndex) onSubmit() else { if (step == SignUpStep.Height && ui.heightCm.isBlank()) onHeight("170"); if (step == SignUpStep.Weight && ui.weightKg.isBlank()) onWeight("65"); idx++ } }, enabled = !ui.isLoading && stepValid(ui, step), modifier = Modifier.weight(1f).height(46.dp), shape = RoundedCornerShape(12.dp)) {
+                    if (idx == steps.lastIndex && ui.isLoading) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary) else Text(if (idx == steps.lastIndex) "Create Account" else "Next")
                 }
             }
-            Spacer(modifier = Modifier.height(20.dp))
         }
     }
 }
 
 @Composable
-private fun AuthModeSwitch(
-    selectedMode: AuthMode,
-    onModeSelected: (AuthMode) -> Unit,
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+private fun WizardProgressBar(progress: Float) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(6.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
     ) {
-        Row(
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            AuthModeChip(
-                label = "Sign In",
-                selected = selectedMode == AuthMode.SIGN_IN,
-                onClick = { onModeSelected(AuthMode.SIGN_IN) },
-                modifier = Modifier.weight(1f),
-            )
-            AuthModeChip(
-                label = "Create Account",
-                selected = selectedMode == AuthMode.SIGN_UP,
-                onClick = { onModeSelected(AuthMode.SIGN_UP) },
-                modifier = Modifier.weight(1f),
-            )
+                .fillMaxWidth(progress.coerceIn(0f, 1f))
+                .height(6.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary),
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DobStep(dob: Long?, age: Int?, onDob: (Long?) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val picker = androidx.compose.material3.rememberDatePickerState(initialSelectedDateMillis = dob)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(onClick = { open = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow, contentColor = MaterialTheme.colorScheme.onSurface)) { Text(dob?.let(::toDate) ?: "Select Date of Birth") }
+        if (age != null) Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.primaryContainer) { Text("Age preview: $age years", modifier = Modifier.padding(10.dp), color = MaterialTheme.colorScheme.onPrimaryContainer) }
+    }
+    if (open) DatePickerDialog(onDismissRequest = { open = false }, confirmButton = { TextButton({ onDob(picker.selectedDateMillis); open = false }) { Text("Done") } }, dismissButton = { TextButton({ open = false }) { Text("Cancel") } }) { DatePicker(state = picker) }
+}
+
+@Composable
+private fun GenderRows(selected: String, onGender: (String) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf("Woman", "Man", "Non-binary", "Prefer not to say").forEach { g ->
+            val s = selected == g
+            Surface(onClick = { onGender(g) }, shape = RoundedCornerShape(12.dp), color = if (s) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
+                Text(g, modifier = Modifier.padding(12.dp), color = if (s) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface)
+            }
         }
     }
 }
 
 @Composable
-private fun AuthModeChip(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Button(
-        onClick = onClick,
-        shape = RoundedCornerShape(12.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = if (selected) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.surface
-            },
-            contentColor = if (selected) {
-                MaterialTheme.colorScheme.onPrimary
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
-        ),
-        elevation = ButtonDefaults.buttonElevation(defaultElevation = if (selected) 2.dp else 0.dp),
-        modifier = modifier.height(44.dp),
-    ) {
-        Text(text = label)
+private fun NumStep(label: String, value: Int, unit: String, min: Int, max: Int, onValue: (Int) -> Unit) {
+    val safe = value.coerceIn(min, max)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.titleMedium)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            StepBtn("-") { onValue((safe - 1).coerceAtLeast(min)) }
+            Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.primaryContainer) { Text("$safe $unit", modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.onPrimaryContainer) }
+            StepBtn("+") { onValue((safe + 1).coerceAtMost(max)) }
+        }
     }
 }
 
+@Composable private fun StepBtn(text: String, onClick: () -> Unit) { IconButton(onClick, modifier = Modifier.size(34.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerLow)) { Text(text, color = MaterialTheme.colorScheme.primary) } }
+@Composable private fun SubmitButton(loading: Boolean, text: String, onClick: () -> Unit) { Button(onClick, enabled = !loading, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().height(52.dp)) { if (loading) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary) else Text(text) } }
+
 @Composable
-private fun AuthTextField(
+private fun AppField(
     value: String,
     onValueChange: (String) -> Unit,
     label: String,
-    modifier: Modifier = Modifier,
-    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
-    visualTransformation: VisualTransformation = VisualTransformation.None,
-    leadingIcon: (@Composable () -> Unit)? = null,
-    trailingIcon: (@Composable () -> Unit)? = null,
-    supportingText: String? = null,
+    keyboard: KeyboardOptions = KeyboardOptions.Default,
+    vt: VisualTransformation = VisualTransformation.None,
+    leading: (@Composable () -> Unit)? = null,
+    trailing: (@Composable () -> Unit)? = null,
+    isError: Boolean = false,
+    help: String? = null,
 ) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { Text(label) },
-        singleLine = true,
-        shape = RoundedCornerShape(16.dp),
-        keyboardOptions = keyboardOptions,
-        visualTransformation = visualTransformation,
-        leadingIcon = leadingIcon,
-        trailingIcon = trailingIcon,
-        supportingText = supportingText?.let { { Text(it) } },
-        modifier = modifier.fillMaxWidth(),
-    )
+    OutlinedTextField(value = value, onValueChange = onValueChange, label = { Text(label) }, singleLine = true, shape = RoundedCornerShape(14.dp), keyboardOptions = keyboard, visualTransformation = vt, leadingIcon = leading, trailingIcon = trailing, isError = isError, supportingText = help?.let { { Text(it) } }, modifier = Modifier.fillMaxWidth())
 }
 
 @Composable
-private fun GenderSelector(
-    selectedGender: String,
-    onGenderChange: (String) -> Unit,
-) {
-    Column {
-        Text(
-            text = "Gender",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Row(
-            modifier = Modifier.padding(top = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            val options = listOf("Female", "Male", "Other", "Prefer not to say")
-            options.forEach { option ->
-                FilterChip(
-                    selected = selectedGender == option,
-                    onClick = { onGenderChange(option) },
-                    label = { Text(option) },
-                )
-            }
-        }
+private fun PassBar(p: PasswordStrength) {
+    val (n, c) = when (p) {
+        PasswordStrength.EMPTY -> 0 to MaterialTheme.colorScheme.outline
+        PasswordStrength.WEAK -> 1 to Color(0xFFEF4444)
+        PasswordStrength.MEDIUM -> 2 to Color(0xFFF59E0B)
+        PasswordStrength.STRONG -> 3 to Color(0xFF10B981)
     }
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { repeat(3) { i -> Box(Modifier.weight(1f).height(5.dp).clip(CircleShape).background(if (i < n) c else MaterialTheme.colorScheme.surfaceContainerHighest)) } }
 }
 
-@Composable
-private fun PasswordStrengthIndicator(strength: PasswordStrength) {
-    val (label, activeCount, color) = when (strength) {
-        PasswordStrength.EMPTY -> Triple("Use 8+ chars, mix symbols for strong password", 0, MaterialTheme.colorScheme.outline)
-        PasswordStrength.WEAK -> Triple("Weak password", 1, Color(0xFFE11D48))
-        PasswordStrength.MEDIUM -> Triple("Medium password", 2, Color(0xFFF59E0B))
-        PasswordStrength.STRONG -> Triple("Strong password", 3, Color(0xFF10B981))
-    }
-
-    Column {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            repeat(3) { index ->
-                val active = index < activeCount
-                Box(
-                    modifier = Modifier
-                        .height(6.dp)
-                        .weight(1f)
-                        .clip(CircleShape)
-                        .background(
-                            if (active) color else MaterialTheme.colorScheme.surfaceContainerHighest,
-                        ),
-                )
-            }
-        }
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 6.dp),
-        )
-    }
+private fun stepValid(ui: AuthUiState, s: SignUpStep): Boolean = when (s) {
+    SignUpStep.FirstName -> ui.firstName.isNotBlank()
+    SignUpStep.LastName -> ui.lastName.isNotBlank()
+    SignUpStep.Username -> ui.username.length in 3..12 && !ui.isCheckingUsername && ui.usernameValidationError == null
+    SignUpStep.Gender -> ui.gender.isNotBlank()
+    SignUpStep.Dob -> ui.dobMillis != null && (ui.ageYears ?: 0) in 10..120
+    SignUpStep.Height -> ui.heightCm.isBlank() || (ui.heightCm.toIntOrNull() ?: 0) in 120..220
+    SignUpStep.Weight -> ui.weightKg.isBlank() || (ui.weightKg.toIntOrNull() ?: 0) in 30..200
+    SignUpStep.Email -> ui.email.isNotBlank() && ui.emailValidationError == null
+    SignUpStep.Password -> ui.password.length >= 8
+    SignUpStep.ConfirmPassword -> ui.confirmPassword.isNotBlank() && ui.confirmPasswordError == null
 }
+
+private fun toDate(millis: Long): String = DateFormat.format("dd MMM yyyy", Date(millis)).toString()
 
 @Preview(showBackground = true)
 @Composable
-private fun LoginScreenPreview() {
+private fun PreviewLogin() {
     HabitSyncTheme {
         LoginScreen(
-            uiState = AuthUiState(
-                mode = AuthMode.SIGN_UP,
-                firstName = "Arshita",
-                lastName = "Chaudhary",
-                username = "arshita01",
-                age = "22",
-                heightCm = "163",
-                weightKg = "52",
-                gender = "Female",
-                email = "hello@habitsync.app",
-                password = "Pass@1234",
-                passwordStrength = PasswordStrength.STRONG,
-            ),
-            onSwitchMode = {},
-            onFirstNameChange = {},
-            onLastNameChange = {},
-            onUsernameChange = {},
-            onAgeChange = {},
-            onHeightChange = {},
-            onWeightChange = {},
-            onGenderChange = {},
-            onEmailChange = {},
-            onPasswordChange = {},
-            onConfirmPasswordChange = {},
-            onTogglePasswordVisibility = {},
-            onToggleConfirmPasswordVisibility = {},
-            onSubmit = {},
+            uiState = AuthUiState(mode = AuthMode.SIGN_UP, firstName = "Ari", lastName = "C", username = "ari01", dobMillis = 1104537600000L, ageYears = 21, heightCm = "165", weightKg = "58", gender = "Woman", email = "a@h.com", password = "Pass@1234", confirmPassword = "Pass@1234", passwordStrength = PasswordStrength.STRONG),
+            onSwitchMode = {}, onFirstNameChange = {}, onLastNameChange = {}, onUsernameChange = {}, onDateOfBirthSelected = {}, onHeightChange = {}, onWeightChange = {}, onGenderChange = {}, onEmailChange = {}, onPasswordChange = {}, onConfirmPasswordChange = {}, onForgotPasswordClick = {}, onTogglePasswordVisibility = {}, onToggleConfirmPasswordVisibility = {}, onSubmit = {},
         )
     }
 }

@@ -20,8 +20,8 @@ data class AppEntryUiState(
 
 class AppEntryViewModel(
     application: Application,
-    private val authRepository: AuthRepository = AuthRepository(),
 ) : AndroidViewModel(application) {
+    private val authRepository = AuthRepository()
     private val onboardingRepository = OnboardingRepository(application.applicationContext)
 
     private val _uiState = MutableStateFlow(AppEntryUiState())
