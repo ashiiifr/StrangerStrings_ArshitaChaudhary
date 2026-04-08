@@ -1,47 +1,70 @@
-# 📱 Kalpathon 2.0 – Android App Development
+# HabitSync
 
-## 🧠 Team: Stranger Strings
-**Team ID:** `KPT021`
+HabitSync is a social habit tracking Android app built with Kotlin, Jetpack Compose (Material 3), MVVM, and Firebase.
 
----
+## Team
+- Team: Stranger Strings
+- Team ID: `KPT021`
+- Team Leader: Arshita Chaudhary
+- Member: Mudit Sharma
 
-## 👥 Team Members
-- **Team Leader:** Arshita Chaudhary
-- **Member:** Mudit Sharma
+## Features
+- Email/password authentication with session persistence
+- Habit creation and streak tracking
+- Proof-based completion flow:
+  - camera or gallery proof upload
+  - optional skip
+  - thumbnail + full preview in card
+- Social layer:
+  - leaderboard (rank by score)
+  - activity feed (including proof completion events)
+- Smooth Compose animations and polished Material 3 UI
 
----
+## Architecture
+- MVVM + clean modular package structure
+- UI: `ui/*`
+- ViewModels: `viewmodel/*`
+- Data + repositories: `data/*`, `data/repository/*`
+- Navigation: `navigation/*`
 
-## 🚀 About the Project
-We are participating in **Kalpathon 2.0** under the **Android App Development** track as **Team Stranger Strings**.
+## Tech Stack
+- Kotlin
+- Jetpack Compose + Material 3
+- Firebase Auth + Firestore (realtime listeners)
+- Storj (S3-compatible) for proof image storage via signed URLs
+- Node backend for secure signed upload URL generation
 
-This repository is being used to develop, organize, and manage our hackathon project throughout the event.
+## Project Structure
+- `app/` Android app
+- `backend/` signed URL service for Storj proof uploads
 
----
+## Setup
+1. Add `google-services.json` to `app/`.
+2. Fill root `.env` (Storj + backend vars).
+3. Place Firebase Admin service account key at:
+   - `backend/serviceAccountKey.json`
 
-## 📌 Current Status
-🚧 **Work in Progress**
+## Run Backend
+```bash
+cd backend
+npm install
+npm start
+```
 
-### Ongoing Tasks
-- Problem statement selection in progress
-- Initial planning and ideation underway
-- Early development and project setup initiated
+## Run Android App
+1. Open project in Android Studio.
+2. Run `app` on emulator/physical device.
+3. Keep backend running during proof upload tests.
 
----
+For emulator:
+- `SIGNED_UPLOAD_API_BASE_URL=http://10.0.2.2:8787`
 
-## 🛠️ Project Phase
-Currently in the **planning and setup stage**.  
-The team is actively brainstorming ideas, finalizing the problem statement, and preparing the initial development environment.
+For physical device:
+- set `SIGNED_UPLOAD_API_BASE_URL=http://<your-laptop-lan-ip>:8787`
 
----
+## Firestore Notes
+- Leaderboard query uses composite ordering (`score DESC`, `lastUpdated DESC`), so create the suggested Firestore index when prompted.
 
-## 📂 Repository Purpose
-This repository will be used for:
-- Project development
-- Source code management
-- Collaboration between team members
-- Tracking progress during the hackathon
-
----
-
-## ✨ Stay Tuned
-More updates will be added as the project progresses.
+## Security Note
+- Never commit real secrets (`.env`, service account keys, Storj secret key).
+- Rotate keys immediately if exposed.
