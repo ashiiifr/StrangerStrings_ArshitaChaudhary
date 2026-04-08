@@ -74,6 +74,12 @@ For physical device:
 
 ## Firestore Notes
 - Leaderboard query uses composite ordering (`score DESC`, `lastUpdated DESC`), so create the suggested Firestore index when prompted.
+- Security rules for production are in:
+  - `firestore.rules`
+- To apply rules quickly:
+  1. Firebase Console -> Firestore Database -> Rules
+  2. Paste contents of `firestore.rules`
+  3. Publish
 
 ## Security Note
 - Never commit real secrets (`.env`, service account keys, Storj secret key).

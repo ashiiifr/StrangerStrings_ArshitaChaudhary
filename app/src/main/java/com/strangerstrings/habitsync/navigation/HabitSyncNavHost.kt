@@ -10,9 +10,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -26,6 +23,7 @@ import com.strangerstrings.habitsync.ui.home.HomeScreen
 import com.strangerstrings.habitsync.ui.leaderboard.LeaderboardScreen
 import com.strangerstrings.habitsync.ui.onboarding.OnboardingScreen
 import com.strangerstrings.habitsync.viewmodel.AppEntryViewModel
+import com.strangerstrings.habitsync.viewmodel.AuthMode
 import com.strangerstrings.habitsync.viewmodel.AuthViewModel
 import com.strangerstrings.habitsync.viewmodel.FeedViewModel
 import com.strangerstrings.habitsync.viewmodel.HomeViewModel
@@ -39,8 +37,6 @@ fun HabitSyncNavHost(
     val navController = rememberNavController()
     val authViewModel: AuthViewModel = viewModel()
     val authUiState by authViewModel.uiState.collectAsStateWithLifecycle()
-    var email by rememberSaveable { mutableStateOf("") }
-    var password by rememberSaveable { mutableStateOf("") }
 
     NavHost(
         navController = navController,
@@ -123,19 +119,25 @@ fun HabitSyncNavHost(
                         }
                         launchSingleTop = true
                     }
-                    password = ""
                 }
             }
 
             LoginScreen(
                 uiState = authUiState,
-                email = email,
-                password = password,
-                onEmailChange = { email = it },
-                onPasswordChange = { password = it },
-                onLoginClick = {
-                    authViewModel.signIn(email = email, password = password)
-                },
+                onSwitchMode = authViewModel::switchMode,
+                onFirstNameChange = authViewModel::onFirstNameChange,
+                onLastNameChange = authViewModel::onLastNameChange,
+                onUsernameChange = authViewModel::onUsernameChange,
+                onAgeChange = authViewModel::onAgeChange,
+                onHeightChange = authViewModel::onHeightChange,
+                onWeightChange = authViewModel::onWeightChange,
+                onGenderChange = authViewModel::onGenderChange,
+                onEmailChange = authViewModel::onEmailChange,
+                onPasswordChange = authViewModel::onPasswordChange,
+                onConfirmPasswordChange = authViewModel::onConfirmPasswordChange,
+                onTogglePasswordVisibility = authViewModel::togglePasswordVisibility,
+                onToggleConfirmPasswordVisibility = authViewModel::toggleConfirmPasswordVisibility,
+                onSubmit = authViewModel::submit,
             )
         }
 
@@ -154,7 +156,7 @@ fun HabitSyncNavHost(
                 },
                 onLogoutClick = {
                     authViewModel.signOut()
-                    password = ""
+                    authViewModel.switchMode(AuthMode.SIGN_IN)
                     navController.navigate(HabitSyncDestination.Login.route) {
                         popUpTo(HabitSyncDestination.Home.route) {
                             inclusive = true

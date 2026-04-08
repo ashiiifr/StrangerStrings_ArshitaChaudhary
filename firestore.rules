@@ -1,0 +1,89 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function validUsername(username) {
+      return username is string
+        && username == lower(username)
+        && username.matches('^[a-z0-9]{3,12}$');
+    }
+
+    function validProfileCreation(userId) {
+      return isOwner(userId)
+        && request.resource.data.keys().hasAll([
+          'firstName',
+          'lastName',
+          'username',
+          'age',
+          'heightCm',
+          'weightKg',
+          'gender',
+          'email',
+          'displayName',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.firstName is string
+        && request.resource.data.lastName is string
+        && request.resource.data.email is string
+        && request.resource.data.displayName is string
+        && validUsername(request.resource.data.username)
+        && request.resource.data.age is int
+        && request.resource.data.age >= 10
+        && request.resource.data.age <= 120
+        && request.resource.data.heightCm is number
+        && request.resource.data.heightCm >= 50
+        && request.resource.data.heightCm <= 250
+        && request.resource.data.weightKg is number
+        && request.resource.data.weightKg >= 20
+        && request.resource.data.weightKg <= 400;
+    }
+
+    function validProfileUpdate(userId) {
+      return isOwner(userId)
+        && request.resource.data.username == resource.data.username
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.userId == resource.data.userId;
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if validProfileCreation(userId)
+        && request.resource.data.userId == userId;
+      allow update: if validProfileUpdate(userId);
+      allow delete: if false;
+    }
+
+    match /usernames/{username} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && validUsername(username)
+        && !exists(/databases/$(database)/documents/usernames/$(username))
+        && request.resource.data.keys().hasOnly(['userId', 'createdAt'])
+        && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    match /users/{userId}/habits/{habitId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /leaderboard/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId);
+    }
+
+    match /feed/{feedId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+  }
+}
