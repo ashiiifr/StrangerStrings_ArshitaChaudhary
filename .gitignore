@@ -1,0 +1,11 @@
+.env
+.env.local
+.env.*.local
+node_modules/
+backend/node_modules/
+backend/serviceAccountKey.json
+.idea/
+.gradle/
+build/
+**/build/
+local.properties
