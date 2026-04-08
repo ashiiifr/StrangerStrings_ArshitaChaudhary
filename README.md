@@ -10,6 +10,7 @@ HabitSync is a social habit tracking Android app built with Kotlin, Jetpack Comp
 
 ## Features
 - Email/password authentication with session persistence
+- Premium first-launch onboarding (6-page animated pager, theme-aware)
 - Habit creation and streak tracking
 - Proof-based completion flow:
   - camera or gallery proof upload
@@ -43,6 +44,7 @@ HabitSync is a social habit tracking Android app built with Kotlin, Jetpack Comp
 2. Fill root `.env` (Storj + backend vars).
 3. Place Firebase Admin service account key at:
    - `backend/serviceAccountKey.json`
+4. Sync Gradle in Android Studio after changes to Firebase/BuildConfig values.
 
 ## Run Backend
 ```bash
@@ -61,6 +63,14 @@ For emulator:
 
 For physical device:
 - set `SIGNED_UPLOAD_API_BASE_URL=http://<your-laptop-lan-ip>:8787`
+
+## Onboarding Behavior
+- First launch: `Entry -> Onboarding -> Login/Home`
+- Returning user:
+  - logged in: `Entry -> Home`
+  - logged out: `Entry -> Login`
+- Reset onboarding (for demo/testing):
+  - clear app data from device/emulator settings
 
 ## Firestore Notes
 - Leaderboard query uses composite ordering (`score DESC`, `lastUpdated DESC`), so create the suggested Firestore index when prompted.

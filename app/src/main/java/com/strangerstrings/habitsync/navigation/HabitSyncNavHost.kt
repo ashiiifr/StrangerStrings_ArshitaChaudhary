@@ -4,12 +4,16 @@ import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -20,10 +24,13 @@ import com.strangerstrings.habitsync.ui.auth.LoginScreen
 import com.strangerstrings.habitsync.ui.feed.FeedScreen
 import com.strangerstrings.habitsync.ui.home.HomeScreen
 import com.strangerstrings.habitsync.ui.leaderboard.LeaderboardScreen
+import com.strangerstrings.habitsync.ui.onboarding.OnboardingScreen
+import com.strangerstrings.habitsync.viewmodel.AppEntryViewModel
 import com.strangerstrings.habitsync.viewmodel.AuthViewModel
 import com.strangerstrings.habitsync.viewmodel.FeedViewModel
 import com.strangerstrings.habitsync.viewmodel.HomeViewModel
 import com.strangerstrings.habitsync.viewmodel.LeaderboardViewModel
+import com.strangerstrings.habitsync.viewmodel.OnboardingViewModel
 
 @Composable
 fun HabitSyncNavHost(
@@ -37,11 +44,7 @@ fun HabitSyncNavHost(
 
     NavHost(
         navController = navController,
-        startDestination = if (authUiState.isLoggedIn) {
-            HabitSyncDestination.Home.route
-        } else {
-            HabitSyncDestination.Login.route
-        },
+        startDestination = HabitSyncDestination.Entry.route,
         modifier = modifier,
         enterTransition = {
             fadeIn(animationSpec = tween(220)) +
@@ -72,6 +75,45 @@ fun HabitSyncNavHost(
                 )
         },
     ) {
+        composable(HabitSyncDestination.Entry.route) {
+            val entryViewModel: AppEntryViewModel = viewModel()
+            val entryUiState by entryViewModel.uiState.collectAsStateWithLifecycle()
+
+            LaunchedEffect(entryUiState.isLoading, entryUiState.destinationRoute) {
+                if (!entryUiState.isLoading && entryUiState.destinationRoute.isNotBlank()) {
+                    navController.navigate(entryUiState.destinationRoute) {
+                        popUpTo(HabitSyncDestination.Entry.route) {
+                            inclusive = true
+                        }
+                        launchSingleTop = true
+                    }
+                }
+            }
+            EntryLoadingScreen()
+        }
+
+        composable(HabitSyncDestination.Onboarding.route) {
+            val onboardingViewModel: OnboardingViewModel = viewModel()
+            val onboardingUiState by onboardingViewModel.uiState.collectAsStateWithLifecycle()
+
+            LaunchedEffect(onboardingViewModel) {
+                onboardingViewModel.navigationEvents.collect {
+                    navController.navigate(HabitSyncDestination.Login.route) {
+                        popUpTo(HabitSyncDestination.Onboarding.route) {
+                            inclusive = true
+                        }
+                        launchSingleTop = true
+                    }
+                }
+            }
+
+            OnboardingScreen(
+                uiState = onboardingUiState,
+                onSkipClick = onboardingViewModel::completeOnboarding,
+                onGetStartedClick = onboardingViewModel::completeOnboarding,
+            )
+        }
+
         composable(HabitSyncDestination.Login.route) {
             LaunchedEffect(authUiState.isLoggedIn) {
                 if (authUiState.isLoggedIn) {
@@ -140,5 +182,15 @@ fun HabitSyncNavHost(
                 onBackClick = { navController.popBackStack() },
             )
         }
+    }
+}
+
+@Composable
+private fun EntryLoadingScreen() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        CircularProgressIndicator()
     }
 }
