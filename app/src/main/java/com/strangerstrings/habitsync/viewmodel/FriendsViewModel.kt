@@ -13,6 +13,7 @@ import com.strangerstrings.habitsync.data.SearchFriendResult
 import com.strangerstrings.habitsync.data.repository.FriendsRepository
 import com.strangerstrings.habitsync.data.repository.LeaderboardRankStore
 import com.strangerstrings.habitsync.data.repository.RankSnapshot
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -87,6 +88,53 @@ class FriendsViewModel(
                     }
                 }
                 .onFailure { error ->
+                    if (error is CancellationException) return@onFailure
+                    _uiState.update {
+                        it.copy(
+                            errorMessage = error.message ?: "Unable to search users right now.",
+                            searchMessage = null,
+                        )
+                    }
+                }
+        }
+    }
+
+    fun submitSearch(query: String) {
+        val normalized = query.trim()
+        _uiState.update { it.copy(query = query) }
+        searchJob?.cancel()
+
+        if (normalized.length < 2) {
+            _uiState.update {
+                it.copy(
+                    searchResults = emptyList(),
+                    errorMessage = null,
+                    searchMessage = "Enter at least 2 characters to search.",
+                )
+            }
+            return
+        }
+
+        searchJob = viewModelScope.launch {
+            runCatching { repository.searchUsersByUsername(normalized) }
+                .onSuccess { users ->
+                    _uiState.update { state ->
+                        val friendIds = state.friends.map(FriendUser::userId).toSet()
+                        val filteredUsers = users.filterNot { candidate -> friendIds.contains(candidate.userId) }
+                        state.copy(
+                            searchResults = filteredUsers,
+                            errorMessage = null,
+                            searchMessage = when {
+                                filteredUsers.isEmpty() -> "No users matched that username yet."
+                                filteredUsers.any { it.relationshipState == FriendRelationshipState.NONE } ->
+                                    "Tap the plus button to send a friend request."
+                                else -> "User found."
+                            },
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    if (error is CancellationException) return@onFailure
                     _uiState.update {
                         it.copy(
                             errorMessage = error.message ?: "Unable to search users right now.",

@@ -152,6 +152,7 @@ fun HabitSyncNavHost(
                 onHeightChange = authViewModel::onHeightChange,
                 onWeightChange = authViewModel::onWeightChange,
                 onGenderChange = authViewModel::onGenderChange,
+                onAvatarSelected = authViewModel::onAvatarSelected,
                 onEmailChange = authViewModel::onEmailChange,
                 onPasswordChange = authViewModel::onPasswordChange,
                 onConfirmPasswordChange = authViewModel::onConfirmPasswordChange,
@@ -180,7 +181,9 @@ fun HabitSyncNavHost(
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             MainShellScreen(
                 homeUiState = uiState,
-                onMarkHabitDone = { habitId -> viewModel.markHabitDone(habitId) },
+                onMarkHabitDone = viewModel::markHabitDone,
+                onUpdateCustomHabit = viewModel::updateCustomHabit,
+                onDeleteCustomHabit = viewModel::deleteCustomHabit,
                 onCreateHabit = viewModel::createHabit,
                 onOpenGlobalLeaderboard = {
                     navController.navigate(HabitSyncDestination.Leaderboard.route)

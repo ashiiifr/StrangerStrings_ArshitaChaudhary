@@ -27,18 +27,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoStories
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.DirectionsRun
 import androidx.compose.material.icons.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.NightsStay
 import androidx.compose.material.icons.filled.Opacity
 import androidx.compose.material.icons.filled.SelfImprovement
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -46,6 +46,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -58,6 +59,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
@@ -65,6 +68,7 @@ import androidx.compose.ui.unit.dp
 import com.strangerstrings.habitsync.data.LeaderboardFilter
 import com.strangerstrings.habitsync.data.LeaderboardUser
 import com.strangerstrings.habitsync.ui.theme.CharcoalDark
+import com.strangerstrings.habitsync.ui.theme.CharcoalLight
 import com.strangerstrings.habitsync.ui.theme.CharcoalMid
 import com.strangerstrings.habitsync.ui.theme.Cream
 import com.strangerstrings.habitsync.ui.theme.HabitSyncTheme
@@ -82,6 +86,7 @@ fun LeaderboardScreen(
     onFilterSelected: (LeaderboardFilter) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var showFilterSheet by remember { mutableStateOf(false) }
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
@@ -136,7 +141,7 @@ fun LeaderboardScreen(
                     item {
                         LeaderboardFilterRow(
                             selectedFilter = uiState.selectedFilter,
-                            onFilterSelected = onFilterSelected,
+                            onOpenSelector = { showFilterSheet = true },
                         )
                     }
 
@@ -159,6 +164,21 @@ fun LeaderboardScreen(
                     }
                 }
             }
+        }
+    }
+
+    if (showFilterSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showFilterSheet = false },
+            containerColor = CharcoalMid,
+        ) {
+            LeaderboardFilterSheet(
+                selectedFilter = uiState.selectedFilter,
+                onSelectFilter = { filter ->
+                    onFilterSelected(filter)
+                    showFilterSheet = false
+                },
+            )
         }
     }
 }
@@ -261,41 +281,140 @@ private fun LeaderboardRow(
 @Composable
 private fun LeaderboardFilterRow(
     selectedFilter: LeaderboardFilter,
-    onFilterSelected: (LeaderboardFilter) -> Unit,
+    onOpenSelector: () -> Unit,
+) {
+    Card(
+        onClick = onOpenSelector,
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = CharcoalMid),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .background(OrangeGlow.copy(alpha = 0.16f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = leaderboardFilterIcon(selectedFilter),
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = OrangeGlow,
+                    )
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = "Board",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Cream.copy(alpha = 0.62f),
+                    )
+                    Text(
+                        text = selectedFilter.label,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = Cream,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowDown,
+                contentDescription = "Choose leaderboard category",
+                tint = Cream.copy(alpha = 0.72f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun LeaderboardFilterSheet(
+    selectedFilter: LeaderboardFilter,
+    onSelectFilter: (LeaderboardFilter) -> Unit,
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
-            text = "Categories",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            text = "Choose board",
+            style = MaterialTheme.typography.titleLarge,
+            color = Cream,
             fontWeight = FontWeight.SemiBold,
         )
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            LeaderboardFilter.entries.forEach { filter ->
-                AssistChip(
-                    onClick = { onFilterSelected(filter) },
-                    modifier = Modifier.width(92.dp),
-                    label = { Text(compactFilterLabel(filter), maxLines = 1) },
-                    shape = RoundedCornerShape(18.dp),
-                    colors = AssistChipDefaults.assistChipColors(
-                        containerColor = if (selectedFilter == filter) OrangeGlow else MaterialTheme.colorScheme.surfaceContainerHigh,
-                        labelColor = if (selectedFilter == filter) CharcoalDark else MaterialTheme.colorScheme.onSurface,
-                    ),
-                    leadingIcon = {
-                        Icon(
-                            imageVector = leaderboardFilterIcon(filter),
-                            contentDescription = null,
-                            modifier = Modifier.size(15.dp),
+        LeaderboardFilter.entries.forEach { filter ->
+            val selected = filter == selectedFilter
+            Card(
+                onClick = { onSelectFilter(filter) },
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (selected) Color.Transparent else CharcoalLight,
+                ),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            if (selected) Brush.linearGradient(listOf(OrangeGlow, com.strangerstrings.habitsync.ui.theme.AmberDeep))
+                            else Brush.linearGradient(listOf(CharcoalLight, CharcoalLight)),
                         )
-                    },
-                )
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .background(
+                                    if (selected) Color.White.copy(alpha = 0.18f) else OrangeGlow.copy(alpha = 0.16f),
+                                    CircleShape,
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = leaderboardFilterIcon(filter),
+                                contentDescription = null,
+                                tint = if (selected) Color.White else OrangeGlow,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = filter.label,
+                                color = if (selected) Color.White else Cream,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                text = if (filter == LeaderboardFilter.OVERALL) "All habits combined" else "${filter.label} habits only",
+                                color = if (selected) Color.White.copy(alpha = 0.74f) else Cream.copy(alpha = 0.58f),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                    if (selected) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
             }
         }
     }

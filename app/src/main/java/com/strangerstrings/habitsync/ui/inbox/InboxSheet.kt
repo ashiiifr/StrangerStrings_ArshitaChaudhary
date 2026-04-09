@@ -15,13 +15,17 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.strangerstrings.habitsync.ui.theme.CharcoalDark
@@ -57,6 +61,7 @@ fun InboxSheet(
     onMarkAllRead: () -> Unit,
     onAccept: (InboxItem) -> Unit,
     onDecline: (InboxItem) -> Unit,
+    onDeleteNotification: (InboxItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     ModalBottomSheet(
@@ -87,59 +92,102 @@ fun InboxSheet(
 
             // Items
             items.forEach { item ->
-                Card(
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (item.isRead) CharcoalMid else OrangeGlow.copy(alpha = 0.12f),
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = if (item.isRead) 0.dp else 4.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.Top,
-                    ) {
-                        // Unread indicator
-                        if (!item.isRead) {
-                            Box(
-                                modifier = Modifier
-                                    .padding(top = 6.dp)
-                                    .size(8.dp)
-                                    .background(OrangeGlow, CircleShape),
-                            )
-                        }
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            Text(
-                                item.title,
-                                style = MaterialTheme.typography.titleMedium,
-                                color = if (item.isRead) Cream.copy(alpha = 0.7f) else Cream,
-                                fontWeight = if (item.isRead) FontWeight.Medium else FontWeight.SemiBold,
-                            )
-                            Text(
-                                item.message,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = if (item.isRead) Cream.copy(alpha = 0.5f) else Cream.copy(alpha = 0.8f),
-                            )
-                            if (item.type == InboxType.FRIEND_REQUEST || item.type == InboxType.CHALLENGE_INVITE) {
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Button(
-                                        onClick = { onAccept(item) },
-                                        shape = RoundedCornerShape(14.dp),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = OrangeGlow,
-                                            contentColor = CharcoalDark,
-                                        ),
-                                    ) {
-                                        Text("Accept", fontWeight = FontWeight.SemiBold)
-                                    }
-                                    TextButton(onClick = { onDecline(item) }) {
-                                        Text("Decline", color = Cream.copy(alpha = 0.5f))
-                                    }
-                                }
+                val dismissible = item.type != InboxType.FRIEND_REQUEST && item.type != InboxType.CHALLENGE_INVITE
+                if (dismissible) {
+                    val dismissState = rememberSwipeToDismissBoxState(
+                        confirmValueChange = { value ->
+                            if (value == SwipeToDismissBoxValue.EndToStart || value == SwipeToDismissBoxValue.StartToEnd) {
+                                onDeleteNotification(item)
+                                true
+                            } else {
+                                false
                             }
+                        },
+                    )
+                    SwipeToDismissBox(
+                        state = dismissState,
+                        backgroundContent = {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(ErrorRed, RoundedCornerShape(20.dp))
+                                    .padding(horizontal = 20.dp, vertical = 24.dp),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = "Delete",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                            }
+                        },
+                    ) {
+                        InboxCard(item = item, onAccept = onAccept, onDecline = onDecline)
+                    }
+                } else {
+                    InboxCard(item = item, onAccept = onAccept, onDecline = onDecline)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InboxCard(
+    item: InboxItem,
+    onAccept: (InboxItem) -> Unit,
+    onDecline: (InboxItem) -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (item.isRead) CharcoalMid else OrangeGlow.copy(alpha = 0.12f),
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (item.isRead) 0.dp else 4.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            if (!item.isRead) {
+                Box(
+                    modifier = Modifier
+                        .padding(top = 6.dp)
+                        .size(8.dp)
+                        .background(OrangeGlow, CircleShape),
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    item.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (item.isRead) Cream.copy(alpha = 0.7f) else Cream,
+                    fontWeight = if (item.isRead) FontWeight.Medium else FontWeight.SemiBold,
+                )
+                Text(
+                    item.message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (item.isRead) Cream.copy(alpha = 0.5f) else Cream.copy(alpha = 0.8f),
+                )
+                if (item.type == InboxType.FRIEND_REQUEST || item.type == InboxType.CHALLENGE_INVITE) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { onAccept(item) },
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = OrangeGlow,
+                                contentColor = CharcoalDark,
+                            ),
+                        ) {
+                            Text("Accept", fontWeight = FontWeight.SemiBold)
+                        }
+                        TextButton(onClick = { onDecline(item) }) {
+                            Text("Decline", color = Cream.copy(alpha = 0.5f))
                         }
                     }
                 }

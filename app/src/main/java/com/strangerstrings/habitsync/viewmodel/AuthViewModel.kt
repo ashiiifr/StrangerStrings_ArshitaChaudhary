@@ -41,6 +41,7 @@ data class AuthUiState(
     val heightCm: String = "",
     val weightKg: String = "",
     val gender: String = "Prefer not to say",
+    val selectedAvatarAssetPath: String? = null,
     val email: String = "",
     val password: String = "",
     val confirmPassword: String = "",
@@ -51,6 +52,7 @@ data class AuthUiState(
     val confirmPasswordError: String? = null,
     val usernameValidationError: String? = null,
     val isCheckingUsername: Boolean = false,
+    val isCheckingEmail: Boolean = false,
     val isRecoveryMode: Boolean = false,
     val isRecoveryLoading: Boolean = false,
     val recoveryUsername: String = "",
@@ -90,6 +92,7 @@ class AuthViewModel(
                 confirmPasswordError = null,
                 usernameValidationError = null,
                 isCheckingUsername = false,
+                isCheckingEmail = false,
                 isRecoveryMode = false,
                 recoveryErrorMessage = null,
                 recoverySuccessMessage = null,
@@ -175,6 +178,7 @@ class AuthViewModel(
     fun onHeightChange(value: String) = updateField { it.copy(heightCm = sanitizeDecimal(value), errorMessage = null) }
     fun onWeightChange(value: String) = updateField { it.copy(weightKg = sanitizeDecimal(value), errorMessage = null) }
     fun onGenderChange(value: String) = updateField { it.copy(gender = value, errorMessage = null) }
+    fun onAvatarSelected(value: String) = updateField { it.copy(selectedAvatarAssetPath = value, errorMessage = null) }
 
     fun onEmailChange(value: String) {
         emailValidationJob?.cancel()
@@ -183,6 +187,7 @@ class AuthViewModel(
             it.copy(
                 email = trimmed,
                 errorMessage = null,
+                isCheckingEmail = false,
                 emailValidationError = when {
                     trimmed.isBlank() -> null
                     EMAIL_REGEX.matches(trimmed) -> null
@@ -195,6 +200,7 @@ class AuthViewModel(
             return
         }
 
+        _uiState.update { it.copy(isCheckingEmail = true, emailValidationError = null) }
         emailValidationJob = viewModelScope.launch {
             delay(350)
             authRepository.isEmailAvailable(trimmed)
@@ -203,7 +209,22 @@ class AuthViewModel(
                         if (it.email != trimmed || it.mode != AuthMode.SIGN_UP) {
                             it
                         } else {
-                            it.copy(emailValidationError = if (available) null else "Email already registered.")
+                            it.copy(
+                                isCheckingEmail = false,
+                                emailValidationError = if (available) null else "Email already registered.",
+                            )
+                        }
+                    }
+                }
+                .onFailure {
+                    _uiState.update {
+                        if (it.email != trimmed || it.mode != AuthMode.SIGN_UP) {
+                            it
+                        } else {
+                            it.copy(
+                                isCheckingEmail = false,
+                                emailValidationError = "Could not verify email right now.",
+                            )
                         }
                     }
                 }
@@ -398,6 +419,7 @@ class AuthViewModel(
                     heightCm = heightCm,
                     weightKg = weightKg,
                     gender = state.gender,
+                    profileImageUrl = state.selectedAvatarAssetPath,
                     email = state.email.trim(),
                     password = state.password,
                 ),
@@ -439,6 +461,7 @@ class AuthViewModel(
         if (state.username.isBlank()) return "Username is required."
         if (!USERNAME_REGEX.matches(state.username)) return "Username must be 3-12 chars using lowercase letters and numbers."
         if (state.usernameValidationError != null) return state.usernameValidationError
+        if (state.selectedAvatarAssetPath.isNullOrBlank()) return "Choose a profile icon."
 
         val dobMillis = state.dobMillis ?: return "Date of birth is required."
         val age = calculateAgeYears(dobMillis)
@@ -452,6 +475,7 @@ class AuthViewModel(
 
         if (state.email.isBlank()) return "Email is required."
         if (!EMAIL_REGEX.matches(state.email)) return "Enter a valid email address."
+        if (state.isCheckingEmail) return "Checking email..."
         if (state.emailValidationError != null) return state.emailValidationError
         if (state.password.length < 8) return "Password must be at least 8 characters."
         if (state.confirmPassword != state.password) return "Passwords do not match."
@@ -540,6 +564,7 @@ private fun AuthUiState.clearSignUpFields(): AuthUiState {
         heightCm = "",
         weightKg = "",
         gender = "Prefer not to say",
+        selectedAvatarAssetPath = null,
         email = "",
         password = "",
         confirmPassword = "",
@@ -550,5 +575,6 @@ private fun AuthUiState.clearSignUpFields(): AuthUiState {
         confirmPasswordError = null,
         usernameValidationError = null,
         isCheckingUsername = false,
+        isCheckingEmail = false,
     )
 }

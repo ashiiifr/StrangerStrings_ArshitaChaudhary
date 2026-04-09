@@ -6,6 +6,7 @@
         android:name=".HabitSyncApp"
         android:allowBackup="true"
         android:label="HabitSync"
+        android:usesCleartextTraffic="true"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity

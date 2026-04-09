@@ -56,7 +56,10 @@ class InboxViewModel(
         viewModelScope.launch {
             runCatching {
                 when (item.type) {
-                    InboxType.FRIEND_REQUEST -> repository.respondToFriendRequest(item.id, accept = true)
+                    InboxType.FRIEND_REQUEST -> {
+                        repository.respondToFriendRequest(item.id, accept = true)
+                        repository.deleteFriendRequestNotification(item.id)
+                    }
                     InboxType.CHALLENGE_INVITE -> repository.respondToChallengeInvite(item.id, accept = true)
                     else -> Unit
                 }
@@ -75,13 +78,30 @@ class InboxViewModel(
         viewModelScope.launch {
             runCatching {
                 when (item.type) {
-                    InboxType.FRIEND_REQUEST -> repository.respondToFriendRequest(item.id, accept = false)
+                    InboxType.FRIEND_REQUEST -> {
+                        repository.respondToFriendRequest(item.id, accept = false)
+                        repository.deleteFriendRequestNotification(item.id)
+                    }
                     InboxType.CHALLENGE_INVITE -> repository.respondToChallengeInvite(item.id, accept = false)
                     else -> Unit
                 }
             }.onFailure { error ->
                 _uiState.update { it.copy(errorMessage = error.message ?: "Action failed.") }
             }
+        }
+    }
+
+    fun dismissNotification(item: InboxItem) {
+        if (item.type == InboxType.FRIEND_REQUEST || item.type == InboxType.CHALLENGE_INVITE) return
+
+        _uiState.update { state ->
+            state.copy(items = state.items.filterNot { it.id == item.id })
+        }
+        viewModelScope.launch {
+            runCatching { repository.deleteNotificationItem(item.id) }
+                .onFailure { error ->
+                    _uiState.update { it.copy(errorMessage = error.message ?: "Could not delete notification.") }
+                }
         }
     }
 

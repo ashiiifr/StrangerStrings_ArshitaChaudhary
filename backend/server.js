@@ -29,7 +29,14 @@ app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
 if (!admin.apps.length) {
-  admin.initializeApp();
+  const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  if (serviceAccountJson) {
+    admin.initializeApp({
+      credential: admin.credential.cert(JSON.parse(serviceAccountJson)),
+    });
+  } else {
+    admin.initializeApp();
+  }
 }
 
 const s3Client = new S3Client({
@@ -110,7 +117,11 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
 
-app.listen(port, () => {
-  // eslint-disable-next-line no-console
-  console.log(`HabitSync proof backend running on port ${port}`);
-});
+if (!process.env.VERCEL) {
+  app.listen(port, () => {
+    // eslint-disable-next-line no-console
+    console.log(`HabitSync proof backend running on port ${port}`);
+  });
+}
+
+export default app;

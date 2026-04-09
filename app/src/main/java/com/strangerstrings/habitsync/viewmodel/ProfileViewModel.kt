@@ -62,6 +62,7 @@ class ProfileViewModel(
                     username = profile.username,
                     bio = profile.bio,
                     gender = profile.gender,
+                    profileImageUrl = profile.profileImageUrl,
                     heightCm = formatDecimal(profile.heightCm),
                     weightKg = formatDecimal(profile.weightKg),
                 ),
@@ -86,6 +87,7 @@ class ProfileViewModel(
     }
     fun onBioChange(value: String) = updateEditable { it.copy(bio = value.take(180)) }
     fun onGenderChange(value: String) = updateEditable { it.copy(gender = value) }
+    fun onAvatarSelected(value: String) = updateEditable { it.copy(profileImageUrl = value) }
     fun onHeightChange(value: String) = updateEditable { it.copy(heightCm = sanitizeDecimal(value)) }
     fun onWeightChange(value: String) = updateEditable { it.copy(weightKg = sanitizeDecimal(value)) }
 

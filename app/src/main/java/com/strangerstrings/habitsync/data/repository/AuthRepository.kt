@@ -1,5 +1,6 @@
 package com.strangerstrings.habitsync.data.repository
 
+import android.net.Uri
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.UserProfileChangeRequest
 import com.google.firebase.firestore.FieldValue
@@ -16,6 +17,7 @@ data class SignUpRequest(
     val heightCm: Float,
     val weightKg: Float,
     val gender: String,
+    val profileImageUrl: String?,
     val email: String,
     val password: String,
 )
@@ -68,7 +70,9 @@ class AuthRepository(
                         FIELD_HEIGHT_CM to request.heightCm,
                         FIELD_WEIGHT_KG to request.weightKg,
                         FIELD_GENDER to request.gender,
+                        FIELD_PROFILE_IMAGE_URL to request.profileImageUrl,
                         FIELD_EMAIL to request.email.trim(),
+                        FIELD_EMAIL_LOWERCASE to request.email.trim().lowercase(),
                         FIELD_DISPLAY_NAME to fullName,
                         FIELD_CREATED_AT to FieldValue.serverTimestamp(),
                         FIELD_UPDATED_AT to FieldValue.serverTimestamp(),
@@ -81,6 +85,7 @@ class AuthRepository(
             user.updateProfile(
                 UserProfileChangeRequest.Builder()
                     .setDisplayName(fullName)
+                    .setPhotoUri(request.profileImageUrl?.let(Uri::parse))
                     .build(),
             ).await()
         }.onFailure {
@@ -102,8 +107,37 @@ class AuthRepository(
     suspend fun isEmailAvailable(email: String): Result<Boolean> = runCatching {
         val normalized = email.trim()
         if (normalized.isBlank()) return@runCatching false
-        val methods = firebaseAuth.fetchSignInMethodsForEmail(normalized).await().signInMethods.orEmpty()
-        methods.isEmpty()
+        val lower = normalized.lowercase()
+
+        val existingLowercase = firestore.collection(USERS_COLLECTION)
+            .whereEqualTo(FIELD_EMAIL_LOWERCASE, lower)
+            .limit(1)
+            .get()
+            .await()
+            .documents
+            .isNotEmpty()
+
+        val existingExact = if (existingLowercase) {
+            true
+        } else {
+            firestore.collection(USERS_COLLECTION)
+                .whereEqualTo(FIELD_EMAIL, normalized)
+                .limit(1)
+                .get()
+                .await()
+                .documents
+                .isNotEmpty()
+        }
+
+        val existingInFirestore = existingLowercase || existingExact
+        if (existingInFirestore) {
+            false
+        } else {
+            val methods = runCatching {
+                firebaseAuth.fetchSignInMethodsForEmail(normalized).await().signInMethods.orEmpty()
+            }.getOrDefault(emptyList())
+            methods.isEmpty()
+        }
     }
 
     suspend fun verifyRecoveryInfo(
@@ -168,7 +202,9 @@ class AuthRepository(
         const val FIELD_WEIGHT_KG = "weightKg"
         const val FIELD_GENDER = "gender"
         const val FIELD_EMAIL = "email"
+        const val FIELD_EMAIL_LOWERCASE = "emailLowercase"
         const val FIELD_DISPLAY_NAME = "displayName"
+        const val FIELD_PROFILE_IMAGE_URL = "profileImageUrl"
         const val FIELD_CREATED_AT = "createdAt"
         const val FIELD_UPDATED_AT = "updatedAt"
         const val MILLIS_PER_DAY = 24L * 60L * 60L * 1000L

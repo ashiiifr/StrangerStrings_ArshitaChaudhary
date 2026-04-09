@@ -31,6 +31,7 @@ data class EditableProfile(
     val username: String = "",
     val bio: String = "",
     val gender: String = "",
+    val profileImageUrl: String? = null,
     val heightCm: String = "",
     val weightKg: String = "",
 )

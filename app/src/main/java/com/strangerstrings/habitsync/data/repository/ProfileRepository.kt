@@ -82,6 +82,7 @@ class ProfileRepository(
                     FIELD_DISPLAY_NAME to fullName,
                     FIELD_BIO to profile.bio.trim(),
                     FIELD_GENDER to profile.gender.trim(),
+                    FIELD_PROFILE_IMAGE_URL to profile.profileImageUrl,
                     FIELD_HEIGHT_CM to heightCm,
                     FIELD_WEIGHT_KG to weightKg,
                     FIELD_UPDATED_AT to com.google.firebase.firestore.FieldValue.serverTimestamp(),
@@ -94,6 +95,7 @@ class ProfileRepository(
         firebaseAuth.currentUser?.updateProfile(
             UserProfileChangeRequest.Builder()
                 .setDisplayName(fullName)
+                .setPhotoUri(profile.profileImageUrl?.let(android.net.Uri::parse))
                 .build(),
         )?.await()
     }

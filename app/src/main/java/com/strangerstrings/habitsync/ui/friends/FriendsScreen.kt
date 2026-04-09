@@ -15,8 +15,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,6 +30,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.HourglassTop
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.MonitorHeart
@@ -58,9 +61,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -69,10 +74,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.strangerstrings.habitsync.data.FriendLeaderboardEntry
 import com.strangerstrings.habitsync.data.FriendProfileDetails
 import com.strangerstrings.habitsync.data.FriendRelationshipState
@@ -98,6 +106,7 @@ import kotlin.math.abs
 fun FriendsScreen(
     uiState: FriendsUiState,
     onQueryChange: (String) -> Unit,
+    onSubmitSearch: (String) -> Unit,
     onSendFriendRequest: (String) -> Unit,
     onOpenFriendProfile: (String) -> Unit,
     onCloseFriendProfile: () -> Unit,
@@ -110,6 +119,7 @@ fun FriendsScreen(
     modifier: Modifier = Modifier,
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
+    var showLeaderboardFilterSheet by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -207,7 +217,7 @@ fun FriendsScreen(
                 item {
                     LeaderboardFilterPickerCard(
                         selectedFilter = uiState.selectedLeaderboardFilter,
-                        onFilterSelected = onSelectLeaderboardFilter,
+                        onOpenSelector = { showLeaderboardFilterSheet = true },
                     )
                 }
                 items(uiState.leaderboard, key = FriendLeaderboardEntry::userId) { row ->
@@ -235,11 +245,14 @@ fun FriendsScreen(
     }
 
     if (showAddFriendsSheet) {
+        val addFriendsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
             onDismissRequest = onDismissAddFriendsSheet,
             containerColor = CharcoalDark,
+            sheetState = addFriendsSheetState,
         ) {
             LazyColumn(
+                modifier = Modifier.imePadding(),
                 contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
@@ -248,7 +261,7 @@ fun FriendsScreen(
                         query = uiState.query,
                         searchMessage = uiState.searchMessage,
                         onQueryChange = onQueryChange,
-                        onSearchClick = { onQueryChange(uiState.query) },
+                        onSearchClick = onSubmitSearch,
                     )
                 }
 
@@ -278,6 +291,21 @@ fun FriendsScreen(
             }
         }
     }
+
+    if (showLeaderboardFilterSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showLeaderboardFilterSheet = false },
+            containerColor = CharcoalDark,
+        ) {
+            LeaderboardFilterSheet(
+                selectedFilter = uiState.selectedLeaderboardFilter,
+                onSelectFilter = { filter ->
+                    onSelectLeaderboardFilter(filter)
+                    showLeaderboardFilterSheet = false
+                },
+            )
+        }
+    }
 }
 
 // ── Search Hero Card ────────────────────────────────────────────────
@@ -286,8 +314,10 @@ private fun AddFriendsSearchCard(
     query: String,
     searchMessage: String?,
     onQueryChange: (String) -> Unit,
-    onSearchClick: () -> Unit,
+    onSearchClick: (String) -> Unit,
 ) {
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
     Card(
         shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
@@ -351,7 +381,11 @@ private fun AddFriendsSearchCard(
                     singleLine = true,
                     shape = RoundedCornerShape(18.dp),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { onSearchClick() }),
+                    keyboardActions = KeyboardActions(onSearch = {
+                        focusManager.clearFocus(force = true)
+                        keyboardController?.hide()
+                        onSearchClick(query)
+                    }),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White,
@@ -361,7 +395,11 @@ private fun AddFriendsSearchCard(
                     ),
                 )
                 Button(
-                    onClick = onSearchClick,
+                    onClick = {
+                        focusManager.clearFocus(force = true)
+                        keyboardController?.hide()
+                        onSearchClick(query)
+                    },
                     shape = RoundedCornerShape(18.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color.White,
@@ -466,6 +504,7 @@ private fun SearchResultCard(
         ) {
             AvatarBubble(
                 label = initialsFor(user.displayName, user.username),
+                imageUrl = user.profileImageUrl,
                 accent = OrangeGlow.copy(alpha = 0.2f),
                 textColor = AmberDeep,
             )
@@ -548,6 +587,7 @@ private fun FriendCard(
         ) {
             AvatarBubble(
                 label = initialsFor(user.displayName, user.username),
+                imageUrl = user.profileImageUrl,
                 accent = MaterialTheme.colorScheme.secondaryContainer,
                 textColor = MaterialTheme.colorScheme.onSecondaryContainer,
             )
@@ -656,88 +696,144 @@ private fun LeaderboardCard(row: FriendLeaderboardEntry) {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LeaderboardFilterPickerCard(
     selectedFilter: LeaderboardFilter,
-    onFilterSelected: (LeaderboardFilter) -> Unit,
+    onOpenSelector: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+    Card(
+        onClick = onOpenSelector,
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = CharcoalMid),
     ) {
-        Text(
-            text = "Categories",
-            style = MaterialTheme.typography.labelLarge,
-            color = Cream.copy(alpha = 0.72f),
-            fontWeight = FontWeight.SemiBold,
-        )
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            LeaderboardFilter.entries.forEach { filter ->
-                LeaderboardFilterTile(
-                    filter = filter,
-                    selected = selectedFilter == filter,
-                    onClick = { onFilterSelected(filter) },
-                )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(OrangeGlow.copy(alpha = 0.16f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = leaderboardFilterIcon(selectedFilter),
+                        contentDescription = null,
+                        tint = OrangeGlow,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = "Board",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Cream.copy(alpha = 0.62f),
+                    )
+                    Text(
+                        text = selectedFilter.label,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = Cream,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
             }
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowDown,
+                contentDescription = "Choose leaderboard category",
+                tint = Cream.copy(alpha = 0.72f),
+            )
         }
     }
 }
 
 @Composable
-private fun LeaderboardFilterTile(
-    filter: LeaderboardFilter,
-    selected: Boolean,
-    onClick: () -> Unit,
+private fun LeaderboardFilterSheet(
+    selectedFilter: LeaderboardFilter,
+    onSelectFilter: (LeaderboardFilter) -> Unit,
 ) {
-    Card(
-        onClick = onClick,
-        modifier = Modifier.width(92.dp),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (selected) Color.Transparent else CharcoalLight,
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (selected) 4.dp else 0.dp),
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Column(
-            modifier = Modifier
-                .background(
-                    if (selected) {
-                        Brush.linearGradient(listOf(OrangeGlow, AmberDeep))
-                    } else {
-                        Brush.linearGradient(listOf(CharcoalLight.copy(alpha = 0.9f), CharcoalLight.copy(alpha = 0.9f)))
-                    },
-                )
-                .padding(horizontal = 10.dp, vertical = 10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (selected) Color.White.copy(alpha = 0.18f) else OrangeGlow.copy(alpha = 0.16f),
-                    ),
-                contentAlignment = Alignment.Center,
+        Text(
+            text = "Choose board",
+            style = MaterialTheme.typography.titleLarge,
+            color = Cream,
+            fontWeight = FontWeight.SemiBold,
+        )
+        LeaderboardFilter.entries.forEach { filter ->
+            val selected = filter == selectedFilter
+            Card(
+                onClick = { onSelectFilter(filter) },
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (selected) Color.Transparent else CharcoalLight,
+                ),
             ) {
-                Icon(
-                    imageVector = leaderboardFilterIcon(filter),
-                    contentDescription = null,
-                    tint = if (selected) Color.White else OrangeGlow,
-                    modifier = Modifier.size(15.dp),
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            if (selected) Brush.linearGradient(listOf(OrangeGlow, AmberDeep))
+                            else Brush.linearGradient(listOf(CharcoalLight, CharcoalLight)),
+                        )
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (selected) Color.White.copy(alpha = 0.18f) else OrangeGlow.copy(alpha = 0.16f),
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = leaderboardFilterIcon(filter),
+                                contentDescription = null,
+                                tint = if (selected) Color.White else OrangeGlow,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = filter.label,
+                                color = if (selected) Color.White else Cream,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                text = if (filter == LeaderboardFilter.OVERALL) "All habits combined" else "${filter.label} habits only",
+                                color = if (selected) Color.White.copy(alpha = 0.74f) else Cream.copy(alpha = 0.58f),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                    if (selected) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            tint = Color.White,
+                        )
+                    }
+                }
             }
-            Text(
-                text = compactFilterLabel(filter),
-                color = if (selected) Color.White else Cream,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-            )
         }
     }
 }
@@ -920,6 +1016,7 @@ private fun FriendProfileSheet(
                     ) {
                         AvatarBubble(
                             label = initialsFor(profile.displayName, profile.username),
+                            imageUrl = profile.profileImageUrl,
                             accent = Color.White.copy(alpha = 0.2f),
                             textColor = Color.White,
                         )
@@ -1138,6 +1235,7 @@ private fun FriendMetricChip(
 @Composable
 private fun AvatarBubble(
     label: String,
+    imageUrl: String? = null,
     accent: Color,
     textColor: Color = MaterialTheme.colorScheme.onPrimaryContainer,
 ) {
@@ -1148,13 +1246,27 @@ private fun AvatarBubble(
             .background(accent),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = label,
-            fontWeight = FontWeight.Bold,
-            color = textColor,
-            style = MaterialTheme.typography.titleMedium,
-        )
+        if (!imageUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = imageUrl.toAppImageModel(),
+                contentDescription = null,
+                modifier = Modifier
+                    .size(50.dp)
+                    .clip(CircleShape),
+            )
+        } else {
+            Text(
+                text = label,
+                fontWeight = FontWeight.Bold,
+                color = textColor,
+                style = MaterialTheme.typography.titleMedium,
+            )
+        }
     }
+}
+
+private fun String.toAppImageModel(): String {
+    return if (startsWith("avatars/")) "file:///android_asset/$this" else this
 }
 
 private fun initialsFor(displayName: String, username: String): String {

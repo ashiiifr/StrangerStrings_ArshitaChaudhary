@@ -5,6 +5,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import com.strangerstrings.habitsync.data.Habit
 import com.strangerstrings.habitsync.data.HabitCategory
+import com.strangerstrings.habitsync.data.HabitCompletionRecord
 import com.strangerstrings.habitsync.data.HabitType
 import com.strangerstrings.habitsync.data.HabitVisibility
 import kotlinx.coroutines.channels.awaitClose
@@ -76,7 +77,16 @@ class FirebaseHabitRepository(
             )
         }
 
-        val habitToSave = habit.copy(proofImageUrl = proofImageUrl)
+        val habitToSave = habit.copy(
+            proofImageUrl = proofImageUrl,
+            completionHistory = habit.completionHistory.map { record ->
+                if (record.epochDay == habit.lastCompletedDate) {
+                    record.copy(proofImageUrl = proofImageUrl ?: record.proofImageUrl)
+                } else {
+                    record
+                }
+            },
+        )
 
         habitRef
             .set(habitToSave.toMap())
@@ -88,6 +98,15 @@ class FirebaseHabitRepository(
                 hasProof = !habitToSave.proofImageUrl.isNullOrBlank(),
             )
         }
+    }
+
+    suspend fun deleteHabit(habitId: String) {
+        val userId = authRepository.getCurrentUserId()
+        if (userId.isBlank()) error("Cannot delete a habit for an unauthenticated user.")
+        habitsCollection(userId)
+            .document(habitId)
+            .delete()
+            .await()
     }
 
     private fun habitsCollection(userId: String) =
@@ -109,6 +128,7 @@ class FirebaseHabitRepository(
         const val FIELD_VISIBILITY = "visibility"
         const val FIELD_COMPLETION_DATES = "completionDates"
         const val FIELD_COMPLETION_TIMESTAMPS = "completionTimestamps"
+        const val FIELD_COMPLETION_HISTORY = "completionHistory"
         const val FIELD_TARGET = "target"
         const val FIELD_NOTE = "note"
         const val FIELD_TOTAL_HABITS_CREATED = "totalHabitsCreated"
@@ -127,6 +147,13 @@ class FirebaseHabitRepository(
             FIELD_VISIBILITY to visibility.name.lowercase(),
             FIELD_COMPLETION_DATES to completionDates,
             FIELD_COMPLETION_TIMESTAMPS to completionTimestamps,
+            FIELD_COMPLETION_HISTORY to completionHistory.map { record ->
+                mapOf(
+                    "epochDay" to record.epochDay,
+                    "completedAt" to record.completedAt,
+                    "proofImageUrl" to record.proofImageUrl,
+                )
+            },
             FIELD_TARGET to target,
             FIELD_NOTE to note,
         )
@@ -182,6 +209,18 @@ class FirebaseHabitRepository(
                 }
             }
             .sorted()
+        val completionHistory = (get(FIELD_COMPLETION_HISTORY) as? List<*>).orEmpty()
+            .mapNotNull { item ->
+                val map = item as? Map<*, *> ?: return@mapNotNull null
+                val epochDay = (map["epochDay"] as? Number)?.toLong() ?: return@mapNotNull null
+                val completedAt = (map["completedAt"] as? Number)?.toLong() ?: return@mapNotNull null
+                HabitCompletionRecord(
+                    epochDay = epochDay,
+                    completedAt = completedAt,
+                    proofImageUrl = map["proofImageUrl"] as? String,
+                )
+            }
+            .sortedBy { it.completedAt }
 
         return Habit(
             id = habitId,
@@ -196,6 +235,7 @@ class FirebaseHabitRepository(
             visibility = visibility,
             completionDates = completionEpochDays,
             completionTimestamps = completionTimestamps,
+            completionHistory = completionHistory,
             target = getString(FIELD_TARGET).orEmpty(),
             note = getString(FIELD_NOTE).orEmpty(),
         )

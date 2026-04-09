@@ -10,6 +10,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.io.IOException
 
 class ProofStorageRepository(
     private val firebaseAuth: FirebaseAuth = FirebaseAuth.getInstance(),
@@ -20,45 +21,51 @@ class ProofStorageRepository(
         habitId: String,
         proofImageBytes: ByteArray,
     ): String = withContext(Dispatchers.IO) {
-        val user = firebaseAuth.currentUser ?: error("No authenticated user found.")
-        val idToken = user.getIdToken(true).await().token
-            ?: error("Unable to acquire Firebase ID token.")
+        try {
+            val user = firebaseAuth.currentUser ?: error("No authenticated user found.")
+            val idToken = user.getIdToken(true).await().token
+                ?: error("Unable to acquire Firebase ID token.")
 
-        val signRequestBody = JSONObject()
-            .put("habitId", habitId)
-            .put("contentType", JPEG_MIME_TYPE)
-            .toString()
-            .toRequestBody(JSON_MIME_TYPE.toMediaType())
+            val signRequestBody = JSONObject()
+                .put("habitId", habitId)
+                .put("contentType", JPEG_MIME_TYPE)
+                .toString()
+                .toRequestBody(JSON_MIME_TYPE.toMediaType())
 
-        val signRequest = Request.Builder()
-            .url("${apiBaseUrl.trimEnd('/')}/proof-upload-url")
-            .addHeader("Authorization", "Bearer $idToken")
-            .post(signRequestBody)
-            .build()
+            val signRequest = Request.Builder()
+                .url("${apiBaseUrl.trimEnd('/')}/proof-upload-url")
+                .addHeader("Authorization", "Bearer $idToken")
+                .post(signRequestBody)
+                .build()
 
-        val signResponse = httpClient.newCall(signRequest).execute()
-        if (!signResponse.isSuccessful) {
-            error("Failed to request upload URL: ${signResponse.code}")
+            val signResponse = httpClient.newCall(signRequest).execute()
+            if (!signResponse.isSuccessful) {
+                error("Failed to request upload URL: ${signResponse.code}")
+            }
+            val signBody = signResponse.body?.string().orEmpty()
+            val signPayload = JSONObject(signBody)
+            val uploadUrl = signPayload.optString("uploadUrl")
+            val fileUrl = signPayload.optString("fileUrl")
+            if (uploadUrl.isBlank() || fileUrl.isBlank()) {
+                error("Invalid upload response from server.")
+            }
+
+            val uploadRequest = Request.Builder()
+                .url(uploadUrl)
+                .put(proofImageBytes.toRequestBody(JPEG_MIME_TYPE.toMediaType()))
+                .build()
+
+            val uploadResponse = httpClient.newCall(uploadRequest).execute()
+            if (!uploadResponse.isSuccessful) {
+                error("Failed to upload proof image: ${uploadResponse.code}")
+            }
+
+            fileUrl
+        } catch (error: IOException) {
+            error(
+                "Proof upload could not reach $apiBaseUrl. Make sure the Node backend is running and your phone is on the same network as this laptop."
+            )
         }
-        val signBody = signResponse.body?.string().orEmpty()
-        val signPayload = JSONObject(signBody)
-        val uploadUrl = signPayload.optString("uploadUrl")
-        val fileUrl = signPayload.optString("fileUrl")
-        if (uploadUrl.isBlank() || fileUrl.isBlank()) {
-            error("Invalid upload response from server.")
-        }
-
-        val uploadRequest = Request.Builder()
-            .url(uploadUrl)
-            .put(proofImageBytes.toRequestBody(JPEG_MIME_TYPE.toMediaType()))
-            .build()
-
-        val uploadResponse = httpClient.newCall(uploadRequest).execute()
-        if (!uploadResponse.isSuccessful) {
-            error("Failed to upload proof image: ${uploadResponse.code}")
-        }
-
-        fileUrl
     }
 
     private companion object {

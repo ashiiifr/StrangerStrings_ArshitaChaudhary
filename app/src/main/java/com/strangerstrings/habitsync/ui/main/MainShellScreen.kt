@@ -35,12 +35,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoStories
@@ -76,6 +79,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -130,7 +134,9 @@ private enum class MainTab(val title: String, val subtitle: String) {
 @Composable
 fun MainShellScreen(
     homeUiState: HomeUiState,
-    onMarkHabitDone: (String) -> Unit,
+    onMarkHabitDone: (String, ByteArray?) -> Unit,
+    onUpdateCustomHabit: (String, String, String, String) -> Unit,
+    onDeleteCustomHabit: (String) -> Unit,
     onCreateHabit: (String, HabitCategory, HabitType, String, String) -> Unit,
     onLogoutClick: () -> Unit,
     onOpenGlobalLeaderboard: () -> Unit,
@@ -217,6 +223,8 @@ fun MainShellScreen(
                 MainTab.HOME -> HomeOverviewScreen(
                     uiState = homeUiState,
                     onMarkHabitDone = onMarkHabitDone,
+                    onUpdateCustomHabit = onUpdateCustomHabit,
+                    onDeleteCustomHabit = onDeleteCustomHabit,
                     onAddHabit = { showCreateMenu = true },
                     contentPadding = contentPadding,
                 )
@@ -236,6 +244,7 @@ fun MainShellScreen(
                 MainTab.FRIENDS -> FriendsScreen(
                     uiState = friendsUiState,
                     onQueryChange = friendsViewModel::onQueryChange,
+                    onSubmitSearch = friendsViewModel::submitSearch,
                     onSendFriendRequest = friendsViewModel::sendFriendRequest,
                     onOpenFriendProfile = friendsViewModel::openFriendProfile,
                     onCloseFriendProfile = friendsViewModel::closeFriendProfile,
@@ -260,6 +269,7 @@ fun MainShellScreen(
                     onUsernameChange = profileViewModel::onUsernameChange,
                     onBioChange = profileViewModel::onBioChange,
                     onGenderChange = profileViewModel::onGenderChange,
+                    onAvatarSelected = profileViewModel::onAvatarSelected,
                     onHeightChange = profileViewModel::onHeightChange,
                     onWeightChange = profileViewModel::onWeightChange,
                     onOpenChangePassword = profileViewModel::openChangePassword,
@@ -280,6 +290,7 @@ fun MainShellScreen(
             onMarkAllRead = inboxViewModel::markAllRead,
             onAccept = inboxViewModel::accept,
             onDecline = inboxViewModel::decline,
+            onDeleteNotification = inboxViewModel::dismissNotification,
         )
     }
 
@@ -466,13 +477,17 @@ private fun CreateChooserSheet(
     onSelectHabit: () -> Unit,
     onSelectChallenge: () -> Unit,
 ) {
+    val chooserSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = CharcoalMid,
+        sheetState = chooserSheetState,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .imePadding()
                 .padding(horizontal = 20.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
@@ -562,14 +577,18 @@ private fun HabitCreatorSheet(
     var customTitle by remember { mutableStateOf("") }
     var target by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
+    val creatorSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = CharcoalMid,
+        sheetState = creatorSheetState,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .imePadding()
                 .padding(horizontal = 20.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
@@ -584,39 +603,47 @@ private fun HabitCreatorSheet(
                 color = Cream.copy(alpha = 0.72f),
             )
 
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                presets.forEach { preset ->
-                    Card(
-                        onClick = {
-                            selectedPreset = preset
-                            if (target.isBlank()) target = preset.targetHint
-                        },
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (selectedPreset.title == preset.title) OrangeGlow else CharcoalLight,
-                        ),
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                presets.chunked(3).forEach { rowPresets ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .width(104.dp)
-                                .padding(14.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Icon(
-                                imageVector = preset.icon,
-                                contentDescription = null,
-                                tint = if (selectedPreset.title == preset.title) CharcoalDark else Cream,
-                            )
-                            Text(
-                                text = preset.title,
-                                color = if (selectedPreset.title == preset.title) CharcoalDark else Cream,
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.SemiBold,
-                            )
+                        rowPresets.forEach { preset ->
+                            Card(
+                                onClick = {
+                                    selectedPreset = preset
+                                    if (target.isBlank()) target = preset.targetHint
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(20.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (selectedPreset.title == preset.title) OrangeGlow else CharcoalLight,
+                                ),
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 8.dp, vertical = 14.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = preset.icon,
+                                        contentDescription = null,
+                                        tint = if (selectedPreset.title == preset.title) CharcoalDark else Cream,
+                                    )
+                                    Text(
+                                        text = preset.title,
+                                        color = if (selectedPreset.title == preset.title) CharcoalDark else Cream,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
+                            }
+                        }
+                        repeat(3 - rowPresets.size) {
+                            Spacer(modifier = Modifier.weight(1f))
                         }
                     }
                 }
@@ -779,13 +806,18 @@ private fun ShellTopBar(
     onAddFriendsClick: () -> Unit,
     showLeaderboard: Boolean,
 ) {
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 14.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+            .background(MaterialTheme.colorScheme.background),
     ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
         // Animated title transitions when switching tabs
         AnimatedContent(
             targetState = tab,
@@ -848,10 +880,10 @@ private fun ShellTopBar(
             }
         }
 
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
             AnimatedVisibility(
                 visible = showLeaderboard,
                 enter = fadeIn(tween(200)) + scaleIn(initialScale = 0.8f, animationSpec = tween(200)),
@@ -938,6 +970,7 @@ private fun ShellTopBar(
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
+            }
             }
         }
     }

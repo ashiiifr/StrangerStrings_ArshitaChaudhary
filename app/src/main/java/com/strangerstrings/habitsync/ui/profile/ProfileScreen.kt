@@ -23,9 +23,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -61,6 +65,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -70,6 +75,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -78,6 +84,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.strangerstrings.habitsync.data.EditableProfile
 import com.strangerstrings.habitsync.data.Habit
 import com.strangerstrings.habitsync.data.UserProfile
@@ -103,6 +110,7 @@ fun ProfileScreen(
     onUsernameChange: (String) -> Unit,
     onBioChange: (String) -> Unit,
     onGenderChange: (String) -> Unit,
+    onAvatarSelected: (String) -> Unit,
     onHeightChange: (String) -> Unit,
     onWeightChange: (String) -> Unit,
     onOpenChangePassword: () -> Unit,
@@ -357,9 +365,11 @@ fun ProfileScreen(
 
     // ── Edit profile sheet ──────────────────────────────────
     if (uiState.isEditing) {
+        val editSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
             onDismissRequest = onCancelEditing,
             containerColor = CharcoalDark,
+            sheetState = editSheetState,
         ) {
             EditProfileSheet(
                 editableProfile = uiState.editableProfile,
@@ -372,6 +382,7 @@ fun ProfileScreen(
                 onUsernameChange = onUsernameChange,
                 onBioChange = onBioChange,
                 onGenderChange = onGenderChange,
+                onAvatarSelected = onAvatarSelected,
                 onHeightChange = onHeightChange,
                 onWeightChange = onWeightChange,
             )
@@ -380,9 +391,11 @@ fun ProfileScreen(
 
     // ── Change password sheet ───────────────────────────────
     if (uiState.isChangingPassword) {
+        val passwordSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
             onDismissRequest = onCloseChangePassword,
             containerColor = CharcoalDark,
+            sheetState = passwordSheetState,
         ) {
             ChangePasswordSheet(
                 currentPassword = uiState.currentPassword,
@@ -431,12 +444,21 @@ private fun ProfileHero(
                         .background(Color.White.copy(alpha = 0.22f)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text = initialsFor(profile),
-                        style = MaterialTheme.typography.headlineLarge,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                    )
+                    val imageUrl = profile.profileImageUrl
+                    if (!imageUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = imageUrl.toAppImageModel(),
+                            contentDescription = "${profile.displayName} avatar",
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        Text(
+                            text = initialsFor(profile),
+                            style = MaterialTheme.typography.headlineLarge,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
                 }
                 Box(
                     modifier = Modifier
@@ -648,9 +670,18 @@ private fun EditProfileSheet(
     onUsernameChange: (String) -> Unit,
     onBioChange: (String) -> Unit,
     onGenderChange: (String) -> Unit,
+    onAvatarSelected: (String) -> Unit,
     onHeightChange: (String) -> Unit,
     onWeightChange: (String) -> Unit,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val avatarOptions = remember {
+        context.assets.list("avatars")
+            ?.filter { it.endsWith(".jpg", ignoreCase = true) || it.endsWith(".jpeg", ignoreCase = true) || it.endsWith(".png", ignoreCase = true) }
+            ?.sorted()
+            ?.map { "avatars/$it" }
+            .orEmpty()
+    }
     val fieldColors = OutlinedTextFieldDefaults.colors(
         focusedBorderColor = OrangeGlow,
         unfocusedBorderColor = Cream.copy(alpha = 0.18f),
@@ -664,6 +695,8 @@ private fun EditProfileSheet(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .imePadding()
             .padding(horizontal = 22.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -694,6 +727,15 @@ private fun EditProfileSheet(
 
         // Editable fields
         Text("EDITABLE", style = MaterialTheme.typography.labelSmall, color = OrangeGlow.copy(alpha = 0.6f))
+
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Profile Icon", style = MaterialTheme.typography.labelMedium, color = Cream.copy(alpha = 0.6f))
+            ProfileAvatarPicker(
+                avatarOptions = avatarOptions,
+                selectedAvatar = editableProfile.profileImageUrl,
+                onAvatarSelected = onAvatarSelected,
+            )
+        }
 
         OutlinedTextField(
             value = editableProfile.username,
@@ -839,6 +881,8 @@ private fun ChangePasswordSheet(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .imePadding()
             .padding(horizontal = 22.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -992,6 +1036,74 @@ private fun displayGender(value: String): String {
         "other" -> "Other"
         "prefer not to say" -> "Prefer not to say"
         else -> value.ifBlank { "Prefer not to say" }
+    }
+}
+
+private fun String.toAppImageModel(): String {
+    return if (startsWith("avatars/")) "file:///android_asset/$this" else this
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ProfileAvatarPicker(
+    avatarOptions: List<String>,
+    selectedAvatar: String?,
+    onAvatarSelected: (String) -> Unit,
+) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        avatarOptions.forEach { avatarPath ->
+            val selected = avatarPath == selectedAvatar
+            val scale by animateFloatAsState(
+                targetValue = if (selected) 1.06f else 1f,
+                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                label = "profile_avatar_scale",
+            )
+            Box(
+                modifier = Modifier
+                    .size(58.dp)
+                    .scale(scale)
+                    .clickable { onAvatarSelected(avatarPath) }
+                    .padding(2.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(CircleShape)
+                        .background(if (selected) OrangeGlow.copy(alpha = 0.18f) else CharcoalLight)
+                        .padding(4.dp),
+                ) {
+                    AsyncImage(
+                        model = avatarPath.toAppImageModel(),
+                        contentDescription = "Profile avatar option",
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(CircleShape),
+                    )
+                }
+                if (selected) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .offset(x = 4.dp, y = 4.dp)
+                            .size(18.dp)
+                            .clip(CircleShape)
+                            .background(OrangeGlow),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = null,
+                            tint = CharcoalDark,
+                            modifier = Modifier.size(12.dp),
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

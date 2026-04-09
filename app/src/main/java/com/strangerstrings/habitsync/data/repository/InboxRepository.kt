@@ -70,6 +70,28 @@ class InboxRepository(
         batch.commit().await()
     }
 
+    suspend fun deleteNotificationItem(notificationId: String) {
+        val userId = authRepository.getCurrentUserId()
+        if (userId.isBlank() || notificationId.isBlank()) return
+
+        usersCollection().document(userId)
+            .collection(COLLECTION_NOTIFICATIONS)
+            .document(notificationId)
+            .delete()
+            .await()
+    }
+
+    suspend fun deleteFriendRequestNotification(fromUserId: String) {
+        val userId = authRepository.getCurrentUserId()
+        if (userId.isBlank() || fromUserId.isBlank()) return
+
+        usersCollection().document(userId)
+            .collection(COLLECTION_NOTIFICATIONS)
+            .document("friend_request_$fromUserId")
+            .delete()
+            .await()
+    }
+
     private fun observeNotifications(): Flow<List<InboxItem>> = callbackFlow {
         val userId = authRepository.getCurrentUserId()
         if (userId.isBlank()) {
@@ -92,11 +114,15 @@ class InboxRepository(
                 val items = snapshot?.documents.orEmpty().mapNotNull { doc ->
                     val message = doc.getString(FIELD_MESSAGE).orEmpty()
                     if (message.isBlank()) return@mapNotNull null
+                    val type = doc.getString(FIELD_TYPE).toInboxType()
+                    if (type == InboxType.FRIEND_REQUEST || type == InboxType.CHALLENGE_INVITE) {
+                        return@mapNotNull null
+                    }
                     InboxItem(
                         id = doc.id,
                         title = doc.getString(FIELD_TITLE).orEmpty().ifBlank { "Update" },
                         message = message,
-                        type = doc.getString(FIELD_TYPE).toInboxType(),
+                        type = type,
                         isRead = doc.getBoolean(FIELD_IS_READ) ?: false,
                         timestampMillis = doc.getTimestamp(FIELD_TIMESTAMP)?.toDate()?.time ?: 0L,
                     )

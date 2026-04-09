@@ -39,6 +39,13 @@ data class Habit(
     val visibility: HabitVisibility = HabitVisibility.PRIVATE,
     val completionDates: List<Long> = emptyList(),
     val completionTimestamps: List<Long> = emptyList(),
+    val completionHistory: List<HabitCompletionRecord> = emptyList(),
     val target: String = "",
     val note: String = "",
+)
+
+data class HabitCompletionRecord(
+    val epochDay: Long,
+    val completedAt: Long,
+    val proofImageUrl: String? = null,
 )

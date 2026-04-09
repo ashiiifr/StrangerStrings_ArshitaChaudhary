@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.strangerstrings.habitsync.data.Habit
 import com.strangerstrings.habitsync.data.HabitCategory
+import com.strangerstrings.habitsync.data.HabitCompletionRecord
 import com.strangerstrings.habitsync.data.HabitType
 import com.strangerstrings.habitsync.data.HabitVisibility
 import com.strangerstrings.habitsync.data.repository.AuthRepository
@@ -120,6 +121,17 @@ class HomeViewModel(
                     .sorted()
                 val updatedCompletionTimestamps = (currentHabit.completionTimestamps + System.currentTimeMillis())
                     .sorted()
+                val completionMoment = System.currentTimeMillis()
+                val updatedCompletionHistory = currentHabit.completionHistory
+                    .filterNot { it.epochDay == today }
+                    .plus(
+                        HabitCompletionRecord(
+                            epochDay = today,
+                            completedAt = completionMoment,
+                            proofImageUrl = currentHabit.proofImageUrl.takeIf { currentHabit.lastCompletedDate == today },
+                        ),
+                    )
+                    .sortedBy { it.completedAt }
                 val updatedHabit = currentHabit.copy(
                     streak = nextStreak,
                     isCompletedToday = true,
@@ -127,6 +139,7 @@ class HomeViewModel(
                     proofImageUrl = null,
                     completionDates = updatedCompletions,
                     completionTimestamps = updatedCompletionTimestamps,
+                    completionHistory = updatedCompletionHistory,
                 )
                 habitRepository.updateHabit(
                     habit = updatedHabit,
@@ -150,6 +163,67 @@ class HomeViewModel(
                     current.copy(uploadingHabitId = null)
                 }
             }
+        }
+    }
+
+    fun renameCustomHabit(habitId: String, newTitle: String) {
+        val state = _uiState.value
+        val habit = state.habits.firstOrNull { it.id == habitId } ?: return
+        if (habit.type != HabitType.OTHER) {
+            _uiState.update { it.copy(errorMessage = "Only custom habits can be renamed.") }
+            return
+        }
+
+        val trimmedTitle = newTitle.trim()
+        if (trimmedTitle.isBlank()) {
+            _uiState.update { it.copy(errorMessage = "Habit name cannot be empty.") }
+            return
+        }
+
+        viewModelScope.launch {
+            runCatching {
+                habitRepository.updateHabit(
+                    habit = habit.copy(title = trimmedTitle),
+                )
+            }.onFailure { error ->
+                _uiState.update { it.copy(errorMessage = error.message ?: "Failed to update habit.") }
+            }
+        }
+    }
+
+    fun updateCustomHabit(habitId: String, newTitle: String, newTarget: String, newNote: String) {
+        val state = _uiState.value
+        val habit = state.habits.firstOrNull { it.id == habitId } ?: return
+        val trimmedTitle = newTitle.trim()
+        if (habit.type == HabitType.OTHER && trimmedTitle.isBlank()) {
+            _uiState.update { it.copy(errorMessage = "Habit name cannot be empty.") }
+            return
+        }
+
+        viewModelScope.launch {
+            runCatching {
+                habitRepository.updateHabit(
+                    habit = habit.copy(
+                        title = if (habit.type == HabitType.OTHER) trimmedTitle else habit.title,
+                        target = newTarget.trim(),
+                        note = newNote.trim(),
+                    ),
+                )
+            }.onFailure { error ->
+                _uiState.update { it.copy(errorMessage = error.message ?: "Failed to update habit.") }
+            }
+        }
+    }
+
+    fun deleteCustomHabit(habitId: String) {
+        val state = _uiState.value
+        state.habits.firstOrNull { it.id == habitId } ?: return
+
+        viewModelScope.launch {
+            runCatching { habitRepository.deleteHabit(habitId) }
+                .onFailure { error ->
+                    _uiState.update { it.copy(errorMessage = error.message ?: "Failed to delete habit.") }
+                }
         }
     }
 
