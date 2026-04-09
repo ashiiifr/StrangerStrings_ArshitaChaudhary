@@ -1,11 +1,14 @@
 package com.strangerstrings.habitsync.data.repository
 
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.UserProfileChangeRequest
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.Transaction
 import com.strangerstrings.habitsync.data.Badge
+import com.strangerstrings.habitsync.data.EditableProfile
 import com.strangerstrings.habitsync.data.Habit
 import com.strangerstrings.habitsync.data.HabitCategory
 import com.strangerstrings.habitsync.data.HabitVisibility
@@ -19,7 +22,82 @@ import java.util.Calendar
 class ProfileRepository(
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance(),
     private val authRepository: AuthRepository = AuthRepository(),
+    private val firebaseAuth: FirebaseAuth = FirebaseAuth.getInstance(),
 ) {
+    suspend fun updateMyProfile(profile: EditableProfile) {
+        val userId = authRepository.getCurrentUserId()
+        if (userId.isBlank()) error("Sign in to update your profile.")
+
+        val normalizedUsername = profile.username.trim().lowercase()
+        if (!USERNAME_REGEX.matches(normalizedUsername)) {
+            error("Username must be 3-12 lowercase letters or numbers.")
+        }
+
+        val firstName = profile.firstName.trim()
+        val lastName = profile.lastName.trim()
+        if (firstName.isBlank() || lastName.isBlank()) {
+            error("First and last name are required.")
+        }
+
+        val heightCm = profile.heightCm.toFloatOrNull() ?: error("Enter a valid height.")
+        val weightKg = profile.weightKg.toFloatOrNull() ?: error("Enter a valid weight.")
+        if (heightCm !in 50f..250f) error("Height should be between 50 and 250 cm.")
+        if (weightKg !in 20f..400f) error("Weight should be between 20 and 400 kg.")
+
+        val fullName = "$firstName $lastName".trim()
+        val userRef = usersCollection().document(userId)
+
+        firestore.runTransaction { transaction ->
+            val userSnapshot = transaction.get(userRef)
+            val previousUsername = userSnapshot.getString(FIELD_USERNAME).orEmpty()
+
+            if (previousUsername != normalizedUsername) {
+                val newUsernameRef = firestore.collection(COLLECTION_USERNAMES).document(normalizedUsername)
+                val newUsernameSnapshot = transaction.get(newUsernameRef)
+                if (newUsernameSnapshot.exists()) {
+                    throw IllegalStateException("Username already taken.")
+                }
+
+                if (previousUsername.isNotBlank()) {
+                    val previousUsernameRef = firestore.collection(COLLECTION_USERNAMES).document(previousUsername)
+                    transaction.delete(previousUsernameRef)
+                }
+
+                transaction.set(
+                    newUsernameRef,
+                    mapOf(
+                        FIELD_USER_ID to userId,
+                        FIELD_CREATED_AT to com.google.firebase.firestore.FieldValue.serverTimestamp(),
+                    ),
+                    com.google.firebase.firestore.SetOptions.merge(),
+                )
+            }
+
+            transaction.set(
+                userRef,
+                mapOf(
+                    FIELD_FIRST_NAME to firstName,
+                    FIELD_LAST_NAME to lastName,
+                    FIELD_USERNAME to normalizedUsername,
+                    FIELD_DISPLAY_NAME to fullName,
+                    FIELD_BIO to profile.bio.trim(),
+                    FIELD_GENDER to profile.gender.trim(),
+                    FIELD_HEIGHT_CM to heightCm,
+                    FIELD_WEIGHT_KG to weightKg,
+                    FIELD_UPDATED_AT to com.google.firebase.firestore.FieldValue.serverTimestamp(),
+                ),
+                com.google.firebase.firestore.SetOptions.merge(),
+            )
+            true
+        }.await()
+
+        firebaseAuth.currentUser?.updateProfile(
+            UserProfileChangeRequest.Builder()
+                .setDisplayName(fullName)
+                .build(),
+        )?.await()
+    }
+
     suspend fun syncFreezeTokensForCurrentMonth() {
         val userId = authRepository.getCurrentUserId()
         if (userId.isBlank()) return
@@ -191,6 +269,8 @@ class ProfileRepository(
             username = username,
             displayName = displayName,
             bio = getString(FIELD_BIO).orEmpty(),
+            email = getString(FIELD_EMAIL).orEmpty(),
+            gender = getString(FIELD_GENDER).orEmpty(),
             profileImageUrl = getString(FIELD_PROFILE_IMAGE_URL),
             weightKg = getDouble(FIELD_WEIGHT_KG)?.toFloat() ?: 0f,
             heightCm = getDouble(FIELD_HEIGHT_CM)?.toFloat() ?: 0f,
@@ -243,11 +323,14 @@ class ProfileRepository(
         const val COLLECTION_USERS = "users"
         const val COLLECTION_HABITS = "habits"
         const val COLLECTION_BADGES = "badges"
+        const val COLLECTION_USERNAMES = "usernames"
         const val FIELD_FIRST_NAME = "firstName"
         const val FIELD_LAST_NAME = "lastName"
         const val FIELD_USERNAME = "username"
         const val FIELD_DISPLAY_NAME = "displayName"
         const val FIELD_BIO = "bio"
+        const val FIELD_EMAIL = "email"
+        const val FIELD_GENDER = "gender"
         const val FIELD_PROFILE_IMAGE_URL = "profileImageUrl"
         const val FIELD_WEIGHT_KG = "weightKg"
         const val FIELD_HEIGHT_CM = "heightCm"
@@ -267,7 +350,11 @@ class ProfileRepository(
         const val FIELD_COMPLETION_DATES = "completionDates"
         const val FIELD_EARNED_AT = "earnedAtMillis"
         const val FIELD_DESCRIPTION = "description"
+        const val FIELD_USER_ID = "userId"
+        const val FIELD_CREATED_AT = "createdAt"
+        const val FIELD_UPDATED_AT = "updatedAt"
         const val DEFAULT_FREEZE_TOKENS = 2L
+        val USERNAME_REGEX = Regex("^[a-z0-9]{3,12}$")
     }
 
     private fun currentMonthKey(): String {
@@ -275,5 +362,13 @@ class ProfileRepository(
         val year = now.get(Calendar.YEAR)
         val month = now.get(Calendar.MONTH) + 1
         return "%04d-%02d".format(year, month)
+    }
+
+    suspend fun changePassword(currentPassword: String, newPassword: String) {
+        val user = firebaseAuth.currentUser ?: error("Not signed in.")
+        val email = user.email ?: error("No email associated with this account.")
+        val credential = com.google.firebase.auth.EmailAuthProvider.getCredential(email, currentPassword)
+        user.reauthenticate(credential).await()
+        user.updatePassword(newPassword).await()
     }
 }

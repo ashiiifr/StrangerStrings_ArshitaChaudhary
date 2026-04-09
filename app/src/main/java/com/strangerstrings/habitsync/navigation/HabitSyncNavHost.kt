@@ -181,7 +181,10 @@ fun HabitSyncNavHost(
             MainShellScreen(
                 homeUiState = uiState,
                 onMarkHabitDone = { habitId -> viewModel.markHabitDone(habitId) },
-                onAddHabitClick = viewModel::addHabit,
+                onCreateHabit = viewModel::createHabit,
+                onOpenGlobalLeaderboard = {
+                    navController.navigate(HabitSyncDestination.Leaderboard.route)
+                },
                 onLogoutClick = {
                     authViewModel.signOut()
                     authViewModel.switchMode(AuthMode.SIGN_IN)
@@ -201,6 +204,7 @@ fun HabitSyncNavHost(
             LeaderboardScreen(
                 uiState = uiState,
                 onBackClick = { navController.popBackStack() },
+                onFilterSelected = leaderboardViewModel::selectFilter,
             )
         }
 

@@ -5,6 +5,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import com.strangerstrings.habitsync.data.Habit
 import com.strangerstrings.habitsync.data.HabitCategory
+import com.strangerstrings.habitsync.data.HabitType
 import com.strangerstrings.habitsync.data.HabitVisibility
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -103,10 +104,13 @@ class FirebaseHabitRepository(
         const val FIELD_LAST_COMPLETED_DATE = "lastCompletedDate"
         const val FIELD_PROOF_IMAGE_URL = "proofImageUrl"
         const val FIELD_CATEGORY = "category"
+        const val FIELD_TYPE = "type"
         const val FIELD_REMINDER_TIME = "reminderTime"
         const val FIELD_VISIBILITY = "visibility"
         const val FIELD_COMPLETION_DATES = "completionDates"
         const val FIELD_COMPLETION_TIMESTAMPS = "completionTimestamps"
+        const val FIELD_TARGET = "target"
+        const val FIELD_NOTE = "note"
         const val FIELD_TOTAL_HABITS_CREATED = "totalHabitsCreated"
     }
 
@@ -118,10 +122,13 @@ class FirebaseHabitRepository(
             FIELD_LAST_COMPLETED_DATE to lastCompletedDate,
             FIELD_PROOF_IMAGE_URL to proofImageUrl,
             FIELD_CATEGORY to category.name.lowercase(),
+            FIELD_TYPE to type.name.lowercase(),
             FIELD_REMINDER_TIME to reminderTime,
             FIELD_VISIBILITY to visibility.name.lowercase(),
             FIELD_COMPLETION_DATES to completionDates,
             FIELD_COMPLETION_TIMESTAMPS to completionTimestamps,
+            FIELD_TARGET to target,
+            FIELD_NOTE to note,
         )
     }
 
@@ -146,6 +153,12 @@ class FirebaseHabitRepository(
                 runCatching { HabitVisibility.valueOf(raw) }.getOrDefault(HabitVisibility.PRIVATE)
             }
             ?: HabitVisibility.PRIVATE
+        val type = getString(FIELD_TYPE)
+            ?.uppercase()
+            ?.let { raw ->
+                runCatching { HabitType.valueOf(raw) }.getOrDefault(HabitType.OTHER)
+            }
+            ?: inferHabitTypeFromTitle(title)
         val reminderTime = getString(FIELD_REMINDER_TIME).orEmpty().ifBlank { "20:00" }
         val completionDates = get(FIELD_COMPLETION_DATES) as? List<*>
         val completionEpochDays = completionDates.orEmpty()
@@ -178,10 +191,13 @@ class FirebaseHabitRepository(
             lastCompletedDate = lastCompletedDate,
             proofImageUrl = proofImageUrl,
             category = category,
+            type = type,
             reminderTime = reminderTime,
             visibility = visibility,
             completionDates = completionEpochDays,
             completionTimestamps = completionTimestamps,
+            target = getString(FIELD_TARGET).orEmpty(),
+            note = getString(FIELD_NOTE).orEmpty(),
         )
     }
 
@@ -194,6 +210,21 @@ class FirebaseHabitRepository(
     private fun currentEpochDay(): Long {
         val millisecondsPerDay = 24 * 60 * 60 * 1000L
         return System.currentTimeMillis() / millisecondsPerDay
+    }
+
+    private fun inferHabitTypeFromTitle(title: String): HabitType {
+        return when (title.trim().lowercase()) {
+            "reading" -> HabitType.READING
+            "writing" -> HabitType.WRITING
+            "studying" -> HabitType.STUDYING
+            "drink water" -> HabitType.DRINK_WATER
+            "running" -> HabitType.RUNNING
+            "walking" -> HabitType.WALKING
+            "sleep early" -> HabitType.SLEEP_EARLY
+            "meditation" -> HabitType.MEDITATION
+            "workout" -> HabitType.WORKOUT
+            else -> HabitType.OTHER
+        }
     }
 
 }

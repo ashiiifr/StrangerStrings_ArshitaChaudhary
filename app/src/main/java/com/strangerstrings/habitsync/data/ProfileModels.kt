@@ -7,6 +7,8 @@ data class UserProfile(
     val username: String,
     val displayName: String,
     val bio: String = "",
+    val email: String = "",
+    val gender: String = "",
     val profileImageUrl: String? = null,
     val weightKg: Float = 0f,
     val heightCm: Float = 0f,
@@ -23,3 +25,12 @@ data class Badge(
     val earnedAtMillis: Long,
 )
 
+data class EditableProfile(
+    val firstName: String = "",
+    val lastName: String = "",
+    val username: String = "",
+    val bio: String = "",
+    val gender: String = "",
+    val heightCm: String = "",
+    val weightKg: String = "",
+)

@@ -5,8 +5,11 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.strangerstrings.habitsync.data.FriendLeaderboardEntry
 import com.strangerstrings.habitsync.data.FriendProfileDetails
+import com.strangerstrings.habitsync.data.FriendRelationshipState
 import com.strangerstrings.habitsync.data.FriendRequest
 import com.strangerstrings.habitsync.data.FriendUser
+import com.strangerstrings.habitsync.data.LeaderboardFilter
+import com.strangerstrings.habitsync.data.SearchFriendResult
 import com.strangerstrings.habitsync.data.repository.FriendsRepository
 import com.strangerstrings.habitsync.data.repository.LeaderboardRankStore
 import com.strangerstrings.habitsync.data.repository.RankSnapshot
@@ -25,28 +28,33 @@ data class FriendsUiState(
     val isLoading: Boolean = false,
     val query: String = "",
     val friends: List<FriendUser> = emptyList(),
-    val searchResults: List<FriendUser> = emptyList(),
+    val suggestedUsers: List<SearchFriendResult> = emptyList(),
+    val searchResults: List<SearchFriendResult> = emptyList(),
     val leaderboard: List<FriendLeaderboardEntry> = emptyList(),
+    val selectedLeaderboardFilter: LeaderboardFilter = LeaderboardFilter.OVERALL,
     val pendingRequestCount: Int = 0,
     val selectedFriendProfile: FriendProfileDetails? = null,
     val isFriendProfileLoading: Boolean = false,
     val errorMessage: String? = null,
+    val searchMessage: String? = null,
 )
 
 class FriendsViewModel(
     application: Application,
-    private val repository: FriendsRepository = FriendsRepository(),
 ) : AndroidViewModel(application) {
+    private val repository = FriendsRepository()
     private val _uiState = MutableStateFlow(FriendsUiState(isLoading = true))
     val uiState: StateFlow<FriendsUiState> = _uiState.asStateFlow()
     private val rankStore = LeaderboardRankStore(application.applicationContext)
 
     private var searchJob: Job? = null
+    private var leaderboardJob: Job? = null
 
     init {
         observeFriends()
-        observeLeaderboard()
+        observeLeaderboard(LeaderboardFilter.OVERALL)
         observeIncomingRequests()
+        loadSuggestedUsers()
     }
 
     fun onQueryChange(query: String) {
@@ -55,7 +63,7 @@ class FriendsViewModel(
 
         val normalized = query.trim()
         if (normalized.length < 2) {
-            _uiState.update { it.copy(searchResults = emptyList(), errorMessage = null) }
+            _uiState.update { it.copy(searchResults = emptyList(), errorMessage = null, searchMessage = null) }
             return
         }
 
@@ -64,17 +72,26 @@ class FriendsViewModel(
             runCatching { repository.searchUsersByUsername(normalized) }
                 .onSuccess { users ->
                     _uiState.update { state ->
+                        val friendIds = state.friends.map(FriendUser::userId).toSet()
+                        val filteredUsers = users.filterNot { candidate -> friendIds.contains(candidate.userId) }
                         state.copy(
-                            searchResults = users.filterNot { candidate ->
-                                state.friends.any { it.userId == candidate.userId }
-                            },
+                            searchResults = filteredUsers,
                             errorMessage = null,
+                            searchMessage = when {
+                                filteredUsers.isEmpty() -> "No users matched that username yet."
+                                filteredUsers.any { it.relationshipState == FriendRelationshipState.NONE } ->
+                                    "Tap the plus button to send a friend request."
+                                else -> "User found."
+                            },
                         )
                     }
                 }
                 .onFailure { error ->
                     _uiState.update {
-                        it.copy(errorMessage = error.message ?: "Unable to search users right now.")
+                        it.copy(
+                            errorMessage = error.message ?: "Unable to search users right now.",
+                            searchMessage = null,
+                        )
                     }
                 }
         }
@@ -84,6 +101,21 @@ class FriendsViewModel(
         if (userId.isBlank()) return
         viewModelScope.launch {
             runCatching { repository.sendFriendRequest(userId) }
+                .onSuccess {
+                    _uiState.update { state ->
+                        state.copy(
+                            searchResults = state.searchResults.map { result ->
+                                if (result.userId == userId) {
+                                    result.copy(relationshipState = FriendRelationshipState.REQUEST_SENT)
+                                } else {
+                                    result
+                                }
+                            },
+                            errorMessage = null,
+                            searchMessage = "Friend request sent.",
+                        )
+                    }
+                }
                 .onFailure { error ->
                     _uiState.update {
                         it.copy(errorMessage = error.message ?: "Failed to send friend request.")
@@ -121,6 +153,35 @@ class FriendsViewModel(
         _uiState.update { it.copy(selectedFriendProfile = null, isFriendProfileLoading = false) }
     }
 
+    fun removeFriend() {
+        val friendUserId = _uiState.value.selectedFriendProfile?.userId.orEmpty()
+        if (friendUserId.isBlank()) return
+
+        viewModelScope.launch {
+            runCatching { repository.removeFriend(friendUserId) }
+                .onSuccess {
+                    _uiState.update {
+                        it.copy(
+                            selectedFriendProfile = null,
+                            isFriendProfileLoading = false,
+                            errorMessage = null,
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(errorMessage = error.message ?: "Unable to remove friend.")
+                    }
+                }
+        }
+    }
+
+    fun selectLeaderboardFilter(filter: LeaderboardFilter) {
+        if (_uiState.value.selectedLeaderboardFilter == filter) return
+        _uiState.update { it.copy(selectedLeaderboardFilter = filter) }
+        observeLeaderboard(filter)
+    }
+
     private fun observeFriends() {
         viewModelScope.launch {
             repository.observeFriends()
@@ -138,15 +199,19 @@ class FriendsViewModel(
                             isLoading = false,
                             friends = friends,
                             errorMessage = null,
+                            searchResults = it.searchResults.filterNot { result ->
+                                friends.any { friend -> friend.userId == result.userId }
+                            },
                         )
                     }
                 }
         }
     }
 
-    private fun observeLeaderboard() {
-        viewModelScope.launch {
-            repository.observeWeeklyLeaderboard()
+    private fun observeLeaderboard(filter: LeaderboardFilter) {
+        leaderboardJob?.cancel()
+        leaderboardJob = viewModelScope.launch {
+            repository.observeFriendsLeaderboard(filter)
                 .catch { error ->
                     _uiState.update {
                         it.copy(errorMessage = error.message ?: "Unable to load friends leaderboard.")
@@ -154,7 +219,13 @@ class FriendsViewModel(
                 }
                 .collect { leaderboard ->
                     _uiState.update {
-                        it.copy(leaderboard = applyRankDelta(leaderboard))
+                        it.copy(
+                            leaderboard = if (filter == LeaderboardFilter.OVERALL) {
+                                applyRankDelta(leaderboard)
+                            } else {
+                                leaderboard.map { entry -> entry.copy(rankDelta = 0) }
+                            },
+                        )
                     }
                 }
         }
@@ -166,6 +237,20 @@ class FriendsViewModel(
                 .catch { }
                 .collect { requests: List<FriendRequest> ->
                     _uiState.update { it.copy(pendingRequestCount = requests.size) }
+                }
+        }
+    }
+
+    private fun loadSuggestedUsers() {
+        viewModelScope.launch {
+            runCatching { repository.fetchSuggestedUsers() }
+                .onSuccess { suggestions ->
+                    _uiState.update { it.copy(suggestedUsers = suggestions) }
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(errorMessage = error.message ?: "Unable to load friend suggestions.")
+                    }
                 }
         }
     }

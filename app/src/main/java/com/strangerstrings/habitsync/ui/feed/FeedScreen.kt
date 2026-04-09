@@ -1,18 +1,26 @@
 package com.strangerstrings.habitsync.ui.feed
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bolt
@@ -27,12 +35,22 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.strangerstrings.habitsync.data.FeedEvent
+import com.strangerstrings.habitsync.ui.theme.CharcoalMid
+import com.strangerstrings.habitsync.ui.theme.Cream
+import com.strangerstrings.habitsync.ui.theme.GoldSoft
 import com.strangerstrings.habitsync.ui.theme.HabitSyncTheme
+import com.strangerstrings.habitsync.ui.theme.OrangeGlow
 import com.strangerstrings.habitsync.viewmodel.FeedUiState
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -49,7 +67,12 @@ fun FeedScreen(
         modifier = modifier.fillMaxSize(),
         topBar = {
             TopAppBar(
-                title = { Text("Activity Feed") },
+                title = {
+                    Text(
+                        "Activity Feed",
+                        fontWeight = FontWeight.Bold,
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(
@@ -72,14 +95,14 @@ fun FeedScreen(
                 exit = fadeOut(),
                 modifier = Modifier.align(Alignment.Center),
             ) {
-                CircularProgressIndicator()
+                CircularProgressIndicator(color = OrangeGlow)
             }
 
             if (!uiState.isLoading) {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     uiState.errorMessage?.let { message ->
                         item {
@@ -90,14 +113,25 @@ fun FeedScreen(
                         }
                     }
 
-                    items(
+                    itemsIndexed(
                         items = uiState.events,
-                        key = FeedEvent::id,
-                    ) { event ->
-                        FeedRow(
-                            event = event,
-                            modifier = Modifier,
-                        )
+                        key = { _, event -> event.id },
+                    ) { index, event ->
+                        // Staggered entrance animations
+                        var visible by remember(event.id) { mutableStateOf(false) }
+                        LaunchedEffect(event.id) {
+                            kotlinx.coroutines.delay((80L + index * 60L).coerceAtMost(400L))
+                            visible = true
+                        }
+                        AnimatedVisibility(
+                            visible = visible,
+                            enter = fadeIn(tween(300)) + slideInVertically(
+                                initialOffsetY = { it / 3 },
+                                animationSpec = tween(350, easing = FastOutSlowInEasing),
+                            ),
+                        ) {
+                            FeedRow(event = event)
+                        }
                     }
                 }
             }
@@ -112,35 +146,43 @@ private fun FeedRow(
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        ),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = CharcoalMid),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalAlignment = Alignment.Top,
         ) {
-            Icon(
-                imageVector = Icons.Default.Bolt,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-            )
-            androidx.compose.foundation.layout.Column(
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(OrangeGlow.copy(alpha = 0.15f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Bolt,
+                    contentDescription = null,
+                    tint = OrangeGlow,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+            Column(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.weight(1f),
             ) {
                 Text(
                     text = event.message,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = Cream,
                 )
                 Text(
                     text = formatTimestamp(event.timestampMillis),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = GoldSoft.copy(alpha = 0.6f),
                 )
             }
         }

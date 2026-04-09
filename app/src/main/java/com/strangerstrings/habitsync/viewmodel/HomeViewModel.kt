@@ -4,11 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.strangerstrings.habitsync.data.Habit
 import com.strangerstrings.habitsync.data.HabitCategory
+import com.strangerstrings.habitsync.data.HabitType
 import com.strangerstrings.habitsync.data.HabitVisibility
 import com.strangerstrings.habitsync.data.repository.AuthRepository
 import com.strangerstrings.habitsync.data.repository.FirebaseHabitRepository
 import com.strangerstrings.habitsync.data.repository.ProfileRepository
 import com.strangerstrings.habitsync.data.repository.ReminderRepository
+import com.strangerstrings.habitsync.data.repository.SocialRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,6 +35,7 @@ class HomeViewModel(
     private val habitRepository: FirebaseHabitRepository = FirebaseHabitRepository(),
     private val profileRepository: ProfileRepository = ProfileRepository(),
     private val reminderRepository: ReminderRepository = ReminderRepository(),
+    private val socialRepository: SocialRepository = SocialRepository(),
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState(isLoading = true))
@@ -46,25 +49,39 @@ class HomeViewModel(
         observeProfile()
     }
 
-    fun addHabit() {
+    fun createHabit(
+        title: String,
+        category: HabitCategory,
+        type: HabitType,
+        target: String,
+        note: String,
+    ) {
         val state = _uiState.value
         if (state.userId.isBlank()) {
             _uiState.update { it.copy(errorMessage = "Please sign in to add habits.") }
             return
         }
 
+        val trimmedTitle = title.trim()
+        if (trimmedTitle.isBlank()) {
+            _uiState.update { it.copy(errorMessage = "Choose or enter a habit name.") }
+            return
+        }
+
         viewModelScope.launch {
             runCatching {
-                val habitNumber = state.habits.size + 1
                 val newHabit = Habit(
                     id = generateHabitId(),
-                    title = "New Habit $habitNumber",
+                    title = trimmedTitle,
                     streak = 0,
                     isCompletedToday = false,
                     lastCompletedDate = null,
-                    category = HabitCategory.CUSTOM,
+                    category = category,
+                    type = type,
                     visibility = HabitVisibility.PRIVATE,
                     completionDates = emptyList(),
+                    target = target.trim(),
+                    note = note.trim(),
                 )
                 habitRepository.addHabit(newHabit)
             }.onFailure { error ->
@@ -165,6 +182,9 @@ class HomeViewModel(
                 .collect { habits ->
                     runCatching {
                         reminderRepository.maybeSendEveningReminder(habits)
+                    }
+                    runCatching {
+                        socialRepository.syncLeaderboardForHabits(habits)
                     }
                     _uiState.update { current ->
                         current.copy(

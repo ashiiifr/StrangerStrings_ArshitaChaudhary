@@ -7,6 +7,8 @@ import com.google.firebase.firestore.SetOptions
 import com.strangerstrings.habitsync.data.FeedEvent
 import com.strangerstrings.habitsync.data.Habit
 import com.strangerstrings.habitsync.data.HabitCategory
+import com.strangerstrings.habitsync.data.HabitType
+import com.strangerstrings.habitsync.data.LeaderboardFilter
 import com.strangerstrings.habitsync.data.LeaderboardUser
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -18,10 +20,10 @@ class SocialRepository(
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance(),
     private val authRepository: AuthRepository = AuthRepository(),
 ) {
-    fun getLeaderboard(): Flow<List<LeaderboardUser>> = callbackFlow {
+    fun getLeaderboard(filter: LeaderboardFilter = LeaderboardFilter.OVERALL): Flow<List<LeaderboardUser>> = callbackFlow {
+        val scoreField = scoreFieldFor(filter)
         val listener = firestore.collection(LEADERBOARD_COLLECTION)
-            .orderBy(FIELD_SCORE, com.google.firebase.firestore.Query.Direction.DESCENDING)
-            .orderBy(FIELD_LAST_UPDATED, com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .orderBy(scoreField, com.google.firebase.firestore.Query.Direction.DESCENDING)
             .limit(100)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
@@ -30,7 +32,11 @@ class SocialRepository(
                 }
 
                 val users = snapshot?.documents.orEmpty()
-                    .mapNotNull { it.toLeaderboardUserOrNull() }
+                    .mapNotNull { it.toLeaderboardUserOrNull(filter) }
+                    .sortedWith(
+                        compareByDescending<LeaderboardUser> { it.score }
+                            .thenByDescending { it.lastUpdatedMillis },
+                    )
                 trySend(users)
             }
 
@@ -73,11 +79,7 @@ class SocialRepository(
         }
 
         val updates = mutableListOf<Pair<com.google.firebase.firestore.DocumentReference, Map<String, Any?>>>()
-        updates += leaderboardRef to mapOf(
-            FIELD_NAME to userName,
-            FIELD_SCORE to FieldValue.increment(1),
-            FIELD_LAST_UPDATED to FieldValue.serverTimestamp(),
-        )
+        updates += leaderboardRef to mapOf(FIELD_LAST_UPDATED to FieldValue.serverTimestamp())
         updates += feedRef to mapOf(
             FIELD_USER_ID to userId,
             FIELD_NAME to userName,
@@ -134,6 +136,49 @@ class SocialRepository(
         batch.commit().await()
 
         updateLongestStreak(userId = userId, streak = habit.streak)
+    }
+
+    suspend fun syncLeaderboardForHabits(habits: List<Habit>) {
+        val userId = authRepository.getCurrentUserId()
+        if (userId.isBlank()) return
+
+        val userSnapshot = firestore.collection(USERS_COLLECTION).document(userId).get().await()
+        val displayName = userSnapshot.getString(FIELD_DISPLAY_NAME)
+            .orEmpty()
+            .ifBlank { authRepository.getCurrentUserName() }
+        val username = userSnapshot.getString(FIELD_USERNAME).orEmpty()
+        val profileImageUrl = userSnapshot.getString(FIELD_PROFILE_IMAGE_URL)
+        val overallScore = habits.sumOf { it.streak.coerceAtLeast(0) }
+        val activeHabitsCount = habits.size
+        val topHabitTitle = habits.maxByOrNull(Habit::streak)?.title.orEmpty()
+        val typeScores = mapOf(
+            FIELD_READING_SCORE to habits.filter { it.type == HabitType.READING }.sumOf { it.streak.coerceAtLeast(0) },
+            FIELD_WRITING_SCORE to habits.filter { it.type == HabitType.WRITING }.sumOf { it.streak.coerceAtLeast(0) },
+            FIELD_STUDYING_SCORE to habits.filter { it.type == HabitType.STUDYING }.sumOf { it.streak.coerceAtLeast(0) },
+            FIELD_DRINK_WATER_SCORE to habits.filter { it.type == HabitType.DRINK_WATER }.sumOf { it.streak.coerceAtLeast(0) },
+            FIELD_RUNNING_SCORE to habits.filter { it.type == HabitType.RUNNING }.sumOf { it.streak.coerceAtLeast(0) },
+            FIELD_WALKING_SCORE to habits.filter { it.type == HabitType.WALKING }.sumOf { it.streak.coerceAtLeast(0) },
+            FIELD_SLEEP_EARLY_SCORE to habits.filter { it.type == HabitType.SLEEP_EARLY }.sumOf { it.streak.coerceAtLeast(0) },
+            FIELD_MEDITATION_SCORE to habits.filter { it.type == HabitType.MEDITATION }.sumOf { it.streak.coerceAtLeast(0) },
+            FIELD_WORKOUT_SCORE to habits.filter { it.type == HabitType.WORKOUT }.sumOf { it.streak.coerceAtLeast(0) },
+        )
+
+        firestore.collection(LEADERBOARD_COLLECTION)
+            .document(userId)
+            .set(
+                buildMap {
+                    put(FIELD_NAME, displayName)
+                    put(FIELD_USERNAME, username)
+                    put(FIELD_PROFILE_IMAGE_URL, profileImageUrl)
+                    put(FIELD_SCORE, overallScore)
+                    put(FIELD_ACTIVE_HABITS_COUNT, activeHabitsCount)
+                    put(FIELD_TOP_HABIT_TITLE, topHabitTitle)
+                    put(FIELD_LAST_UPDATED, FieldValue.serverTimestamp())
+                    putAll(typeScores)
+                },
+                SetOptions.merge(),
+            )
+            .await()
     }
 
     suspend fun awardSocialButterflyIfEligible(userId: String) {
@@ -255,17 +300,35 @@ class SocialRepository(
         return timestamp / MILLIS_PER_DAY
     }
 
-    private fun DocumentSnapshot.toLeaderboardUserOrNull(): LeaderboardUser? {
+    private fun DocumentSnapshot.toLeaderboardUserOrNull(filter: LeaderboardFilter): LeaderboardUser? {
         val userId = id
         val name = getString(FIELD_NAME).orEmpty().ifBlank { "Habit Hero" }
-        val score = getLong(FIELD_SCORE)?.toInt() ?: 0
+        val score = getLong(scoreFieldFor(filter))?.toInt() ?: 0
         val lastUpdatedMillis = getTimestamp(FIELD_LAST_UPDATED)?.toDate()?.time ?: 0L
         return LeaderboardUser(
             userId = userId,
             name = name,
+            username = getString(FIELD_USERNAME).orEmpty(),
             score = score.coerceAtLeast(0),
+            activeHabitsCount = (getLong(FIELD_ACTIVE_HABITS_COUNT) ?: 0L).toInt(),
+            bestHabitTitle = getString(FIELD_TOP_HABIT_TITLE).orEmpty(),
             lastUpdatedMillis = lastUpdatedMillis,
         )
+    }
+
+    private fun scoreFieldFor(filter: LeaderboardFilter): String {
+        return when (filter) {
+            LeaderboardFilter.OVERALL -> FIELD_SCORE
+            LeaderboardFilter.READING -> FIELD_READING_SCORE
+            LeaderboardFilter.WRITING -> FIELD_WRITING_SCORE
+            LeaderboardFilter.STUDYING -> FIELD_STUDYING_SCORE
+            LeaderboardFilter.DRINK_WATER -> FIELD_DRINK_WATER_SCORE
+            LeaderboardFilter.RUNNING -> FIELD_RUNNING_SCORE
+            LeaderboardFilter.WALKING -> FIELD_WALKING_SCORE
+            LeaderboardFilter.SLEEP_EARLY -> FIELD_SLEEP_EARLY_SCORE
+            LeaderboardFilter.MEDITATION -> FIELD_MEDITATION_SCORE
+            LeaderboardFilter.WORKOUT -> FIELD_WORKOUT_SCORE
+        }
     }
 
     private fun DocumentSnapshot.toFeedEventOrNull(): FeedEvent? {
@@ -290,7 +353,21 @@ class SocialRepository(
         const val COLLECTION_BADGES = "badges"
         const val NOTIFICATIONS_COLLECTION = "notifications"
         const val FIELD_NAME = "name"
+        const val FIELD_USERNAME = "username"
+        const val FIELD_DISPLAY_NAME = "displayName"
+        const val FIELD_PROFILE_IMAGE_URL = "profileImageUrl"
         const val FIELD_SCORE = "score"
+        const val FIELD_READING_SCORE = "readingScore"
+        const val FIELD_WRITING_SCORE = "writingScore"
+        const val FIELD_STUDYING_SCORE = "studyingScore"
+        const val FIELD_DRINK_WATER_SCORE = "drinkWaterScore"
+        const val FIELD_RUNNING_SCORE = "runningScore"
+        const val FIELD_WALKING_SCORE = "walkingScore"
+        const val FIELD_SLEEP_EARLY_SCORE = "sleepEarlyScore"
+        const val FIELD_MEDITATION_SCORE = "meditationScore"
+        const val FIELD_WORKOUT_SCORE = "workoutScore"
+        const val FIELD_ACTIVE_HABITS_COUNT = "activeHabitsCount"
+        const val FIELD_TOP_HABIT_TITLE = "topHabitTitle"
         const val FIELD_LAST_UPDATED = "lastUpdated"
         const val FIELD_USER_ID = "userId"
         const val FIELD_TITLE = "title"

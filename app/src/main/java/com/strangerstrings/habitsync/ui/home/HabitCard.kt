@@ -11,21 +11,25 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -50,7 +54,13 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.strangerstrings.habitsync.data.Habit
+import com.strangerstrings.habitsync.ui.theme.CharcoalDark
+import com.strangerstrings.habitsync.ui.theme.CharcoalLight
+import com.strangerstrings.habitsync.ui.theme.CharcoalMid
+import com.strangerstrings.habitsync.ui.theme.Cream
+import com.strangerstrings.habitsync.ui.theme.GoldSoft
 import com.strangerstrings.habitsync.ui.theme.HabitSyncTheme
+import com.strangerstrings.habitsync.ui.theme.OrangeGlow
 
 @Composable
 fun HabitCard(
@@ -119,10 +129,8 @@ fun HabitCard(
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        ),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = CharcoalMid),
         elevation = CardDefaults.cardElevation(
             defaultElevation = 4.dp,
             pressedElevation = 8.dp,
@@ -142,7 +150,7 @@ fun HabitCard(
                 Text(
                     text = habit.title,
                     style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = Cream,
                 )
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -151,7 +159,7 @@ fun HabitCard(
                     Icon(
                         imageVector = streakIcon,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = OrangeGlow,
                     )
                     AnimatedContent(
                         targetState = habit.streak,
@@ -161,7 +169,7 @@ fun HabitCard(
                         Text(
                             text = "$animatedStreak day streak",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = GoldSoft.copy(alpha = 0.8f),
                             modifier = Modifier.graphicsLayer(
                                 scaleX = streakScale.value,
                                 scaleY = streakScale.value,
@@ -187,6 +195,13 @@ fun HabitCard(
                 onClick = { onMarkDoneClick(habit.id) },
                 enabled = !habit.isCompletedToday && !isUploading,
                 interactionSource = buttonInteractionSource,
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (habit.isCompletedToday) CharcoalLight else OrangeGlow,
+                    contentColor = if (habit.isCompletedToday) GoldSoft else CharcoalDark,
+                    disabledContainerColor = CharcoalLight,
+                    disabledContentColor = GoldSoft.copy(alpha = 0.6f),
+                ),
                 modifier = Modifier.graphicsLayer(
                     scaleX = pressScale * completionScale.value,
                     scaleY = pressScale * completionScale.value,
@@ -196,9 +211,10 @@ fun HabitCard(
                     CircularProgressIndicator(
                         modifier = Modifier.size(16.dp),
                         strokeWidth = 2.dp,
+                        color = OrangeGlow,
                     )
                 } else {
-                    Text(text = if (habit.isCompletedToday) "Completed" else "Mark Done")
+                    Text(text = if (habit.isCompletedToday) "Done" else "Mark Done")
                 }
             }
         }

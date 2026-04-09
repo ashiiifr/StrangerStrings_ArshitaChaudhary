@@ -7,6 +7,21 @@ data class FriendUser(
     val profileImageUrl: String? = null,
 )
 
+enum class FriendRelationshipState {
+    NONE,
+    REQUEST_SENT,
+    REQUEST_RECEIVED,
+    FRIEND,
+}
+
+data class SearchFriendResult(
+    val userId: String,
+    val username: String,
+    val displayName: String,
+    val profileImageUrl: String? = null,
+    val relationshipState: FriendRelationshipState = FriendRelationshipState.NONE,
+)
+
 data class FriendRequest(
     val id: String,
     val fromUserId: String,
@@ -19,8 +34,10 @@ data class FriendRequest(
 data class FriendLeaderboardEntry(
     val userId: String,
     val username: String,
+    val displayName: String = username,
     val profileImageUrl: String? = null,
-    val weeklyScore: Int,
+    val score: Int,
+    val activeHabitsCount: Int = 0,
     val rank: Int,
     val rankDelta: Int,
 )
