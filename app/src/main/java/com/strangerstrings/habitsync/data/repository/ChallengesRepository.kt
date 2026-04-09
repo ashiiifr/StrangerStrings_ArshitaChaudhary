@@ -20,6 +20,7 @@ import java.util.UUID
 class ChallengesRepository(
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance(),
     private val authRepository: AuthRepository = AuthRepository(),
+    private val proofStorageRepository: ProofStorageRepository = ProofStorageRepository(),
     private val socialRepository: SocialRepository = SocialRepository(),
 ) {
     fun observeMyChallenges(): Flow<List<Challenge>> = callbackFlow {
@@ -81,6 +82,7 @@ class ChallengesRepository(
                             lastCompletedDate == currentEpochDay(),
                         lastCompletedDate = lastCompletedDate,
                         completionDates = completionDates,
+                        proofImageUrl = doc.getString(FIELD_PROOF_IMAGE_URL)?.takeIf { lastCompletedDate == currentEpochDay() },
                     )
                 }
                 trySend(participants)
@@ -176,17 +178,25 @@ class ChallengesRepository(
         val challengeId = UUID.randomUUID().toString()
         val startedAt = System.currentTimeMillis()
         val endsAt = startedAt + (durationDays * 24L * 60L * 60L * 1000L)
+        val friendIds = firestore.collection(COLLECTION_USERS)
+            .document(currentUserId)
+            .collection(COLLECTION_FRIENDS)
+            .get()
+            .await()
+            .documents
+            .map { it.id }
+            .toSet()
 
         val inviteIds = mutableListOf<String>()
         inviteUsernames.map { it.trim().lowercase() }.filter { it.isNotBlank() }.forEach { username ->
             val userDoc = firestore.collection(COLLECTION_USERNAMES).document(username).get().await()
             val userId = userDoc.getString(FIELD_USER_ID).orEmpty()
-            if (userId.isNotBlank() && userId != currentUserId) {
+            if (userId.isNotBlank() && userId != currentUserId && friendIds.contains(userId)) {
                 inviteIds += userId
             }
         }
 
-        val participantIds = (listOf(currentUserId) + inviteIds).distinct()
+        val participantIds = listOf(currentUserId)
         val batch = firestore.batch()
         val challengeRef = challengesCollection().document(challengeId)
         batch.set(
@@ -203,18 +213,17 @@ class ChallengesRepository(
             ),
         )
 
-        participantIds.forEach { userId ->
-            batch.set(
-                challengeRef.collection(COLLECTION_PARTICIPANTS).document(userId),
-                mapOf(
-                    FIELD_USERNAME to if (userId == currentUserId) currentUsername else "",
-                    FIELD_STREAK to 0,
-                    FIELD_IS_COMPLETED_TODAY to false,
-                    FIELD_LAST_COMPLETED_DATE to null,
-                    FIELD_COMPLETION_DATES to emptyList<Long>(),
-                ),
-            )
-        }
+        batch.set(
+            challengeRef.collection(COLLECTION_PARTICIPANTS).document(currentUserId),
+            mapOf(
+                FIELD_USERNAME to currentUsername,
+                FIELD_STREAK to 0,
+                FIELD_IS_COMPLETED_TODAY to false,
+                FIELD_LAST_COMPLETED_DATE to null,
+                FIELD_COMPLETION_DATES to emptyList<Long>(),
+                FIELD_PROOF_IMAGE_URL to null,
+            ),
+        )
 
         inviteIds.forEach { userId ->
             batch.set(
@@ -234,6 +243,148 @@ class ChallengesRepository(
         }
         batch.commit().await()
         socialRepository.incrementJoinedChallengesAndAwardIfEligible(currentUserId)
+    }
+
+    suspend fun updateChallenge(
+        challengeId: String,
+        name: String,
+        category: HabitCategory,
+        rule: String,
+        durationDays: Int,
+        inviteUsernames: List<String>,
+    ) {
+        val currentUserId = authRepository.getCurrentUserId()
+        if (currentUserId.isBlank() || challengeId.isBlank()) return
+
+        val challengeRef = challengesCollection().document(challengeId)
+        val challengeDoc = challengeRef.get().await()
+        if (!challengeDoc.exists()) error("Challenge not found.")
+        if (challengeDoc.getString(FIELD_CREATOR_USER_ID) != currentUserId) {
+            error("Only the creator can edit this challenge.")
+        }
+
+        val currentParticipantIds = (challengeDoc.get(FIELD_PARTICIPANT_IDS) as? List<*>).orEmpty()
+            .mapNotNull { it as? String }
+            .distinct()
+
+        val friendIds = firestore.collection(COLLECTION_USERS)
+            .document(currentUserId)
+            .collection(COLLECTION_FRIENDS)
+            .get()
+            .await()
+            .documents
+            .map { it.id }
+            .toSet()
+
+        val invitedIds = mutableListOf<String>()
+        inviteUsernames.map { it.trim().lowercase() }.filter { it.isNotBlank() }.forEach { username ->
+            val userDoc = firestore.collection(COLLECTION_USERNAMES).document(username).get().await()
+            val userId = userDoc.getString(FIELD_USER_ID).orEmpty()
+            if (userId.isNotBlank() && userId != currentUserId && friendIds.contains(userId)) {
+                invitedIds += userId
+            }
+        }
+
+        val acceptedParticipantIds = currentParticipantIds
+        val finalParticipantIds = (acceptedParticipantIds.filter { it == currentUserId || it in invitedIds } + listOf(currentUserId)).distinct()
+        val toRemove = acceptedParticipantIds.filter { it != currentUserId && it !in invitedIds }
+        val toAddInvites = invitedIds.filter { it !in acceptedParticipantIds }
+        val batch = firestore.batch()
+        batch.set(
+            challengeRef,
+            mapOf(
+                FIELD_NAME to name,
+                FIELD_CATEGORY to category.name.lowercase(),
+                FIELD_RULE to rule,
+                FIELD_DURATION_DAYS to durationDays,
+                FIELD_ENDS_AT to (challengeDoc.getLong(FIELD_STARTED_AT) ?: System.currentTimeMillis()) + (durationDays * 24L * 60L * 60L * 1000L),
+                FIELD_PARTICIPANT_IDS to finalParticipantIds,
+            ),
+            SetOptions.merge(),
+        )
+
+        toRemove.forEach { userId ->
+            batch.delete(challengeRef.collection(COLLECTION_PARTICIPANTS).document(userId))
+            batch.delete(
+                firestore.collection(COLLECTION_USERS)
+                    .document(userId)
+                    .collection(COLLECTION_CHALLENGE_INVITES)
+                    .document(challengeId),
+            )
+        }
+
+        toAddInvites.forEach { userId ->
+            batch.set(
+                firestore.collection(COLLECTION_USERS).document(userId)
+                    .collection(COLLECTION_CHALLENGE_INVITES)
+                    .document(challengeId),
+                mapOf(
+                    FIELD_CHALLENGE_ID to challengeId,
+                    FIELD_NAME to name,
+                    FIELD_RULE to rule,
+                    FIELD_CATEGORY to category.name.lowercase(),
+                    FIELD_DURATION_DAYS to durationDays,
+                    FIELD_STATUS to STATUS_PENDING,
+                    FIELD_CREATED_AT to FieldValue.serverTimestamp(),
+                ),
+                SetOptions.merge(),
+            )
+        }
+
+        (currentParticipantIds.intersect(finalParticipantIds.toSet()) - currentUserId).forEach { userId ->
+            val existingInvite = firestore.collection(COLLECTION_USERS).document(userId)
+                .collection(COLLECTION_CHALLENGE_INVITES)
+                .document(challengeId)
+                .get()
+                .await()
+            if (existingInvite.exists() && existingInvite.getString(FIELD_STATUS) == STATUS_PENDING) {
+                batch.set(
+                    firestore.collection(COLLECTION_USERS).document(userId)
+                        .collection(COLLECTION_CHALLENGE_INVITES)
+                        .document(challengeId),
+                    mapOf(
+                        FIELD_NAME to name,
+                        FIELD_RULE to rule,
+                        FIELD_CATEGORY to category.name.lowercase(),
+                        FIELD_DURATION_DAYS to durationDays,
+                    ),
+                    SetOptions.merge(),
+                )
+            }
+        }
+
+        batch.commit().await()
+    }
+
+    suspend fun deleteChallenge(challengeId: String) {
+        val currentUserId = authRepository.getCurrentUserId()
+        if (currentUserId.isBlank() || challengeId.isBlank()) return
+        val challengeRef = challengesCollection().document(challengeId)
+        val challengeDoc = challengeRef.get().await()
+        if (!challengeDoc.exists()) return
+        if (challengeDoc.getString(FIELD_CREATOR_USER_ID) != currentUserId) {
+            error("Only the creator can delete this challenge.")
+        }
+
+        val participantIds = (challengeDoc.get(FIELD_PARTICIPANT_IDS) as? List<*>).orEmpty()
+            .mapNotNull { it as? String }
+            .distinct()
+        val participantDocs = challengeRef.collection(COLLECTION_PARTICIPANTS).get().await().documents
+        val messageDocs = challengeRef.collection(COLLECTION_MESSAGES).get().await().documents
+        val batch = firestore.batch()
+
+        participantIds.forEach { userId ->
+            batch.delete(
+                firestore.collection(COLLECTION_USERS)
+                    .document(userId)
+                    .collection(COLLECTION_CHALLENGE_INVITES)
+                    .document(challengeId),
+            )
+        }
+        participantDocs.forEach { batch.delete(it.reference) }
+        messageDocs.forEach { batch.delete(it.reference) }
+        batch.delete(challengeRef)
+        batch.commit().await()
     }
 
     suspend fun sendChallengeMessage(challengeId: String, message: String) {
@@ -355,6 +506,7 @@ class ChallengesRepository(
                 FIELD_IS_COMPLETED_TODAY to false,
                 FIELD_LAST_COMPLETED_DATE to null,
                 FIELD_COMPLETION_DATES to emptyList<Long>(),
+                FIELD_PROOF_IMAGE_URL to null,
             ),
             com.google.firebase.firestore.SetOptions.merge(),
         )
@@ -362,7 +514,7 @@ class ChallengesRepository(
         socialRepository.incrementJoinedChallengesAndAwardIfEligible(currentUserId)
     }
 
-    suspend fun markChallengeDone(challengeId: String) {
+    suspend fun markChallengeDone(challengeId: String, proofImageBytes: ByteArray? = null) {
         val currentUserId = authRepository.getCurrentUserId()
         if (currentUserId.isBlank() || challengeId.isBlank()) return
 
@@ -400,6 +552,14 @@ class ChallengesRepository(
             else -> 1
         }
         val updatedCompletionDates = (completionDates + today).distinct().sorted()
+        val proofImageUrl = if (proofImageBytes != null) {
+            proofStorageRepository.uploadProofImage(
+                habitId = "challenge_$challengeId",
+                proofImageBytes = proofImageBytes,
+            )
+        } else {
+            participantDoc.getString(FIELD_PROOF_IMAGE_URL)
+        }
 
         participantRef.set(
             mapOf(
@@ -407,6 +567,7 @@ class ChallengesRepository(
                 FIELD_IS_COMPLETED_TODAY to true,
                 FIELD_LAST_COMPLETED_DATE to today,
                 FIELD_COMPLETION_DATES to updatedCompletionDates,
+                FIELD_PROOF_IMAGE_URL to proofImageUrl,
             ),
             SetOptions.merge(),
         ).await()
@@ -415,7 +576,11 @@ class ChallengesRepository(
         if (username.isNotBlank()) {
             sendSystemChallengeActivity(
                 challengeId = challengeId,
-                message = "$username completed today's challenge check-in.",
+                message = if (proofImageUrl.isNullOrBlank()) {
+                    "$username completed today's challenge check-in."
+                } else {
+                    "$username completed today's challenge check-in with proof."
+                },
             )
         }
     }
@@ -483,14 +648,14 @@ class ChallengesRepository(
         keepTodayCompleted: Boolean,
         streak: Int,
     ) {
-        batch.set(
-            participantRef,
-            mapOf(
-                FIELD_IS_COMPLETED_TODAY to keepTodayCompleted,
-                FIELD_STREAK to streak,
-            ),
-            SetOptions.merge(),
+        val updates = mutableMapOf<String, Any?>(
+            FIELD_IS_COMPLETED_TODAY to keepTodayCompleted,
+            FIELD_STREAK to streak,
         )
+        if (!keepTodayCompleted) {
+            updates[FIELD_PROOF_IMAGE_URL] = null
+        }
+        batch.set(participantRef, updates, SetOptions.merge())
     }
 
     private fun DocumentSnapshot.toChallengeOrNull(): Challenge? {
@@ -521,6 +686,7 @@ class ChallengesRepository(
     private companion object {
         const val COLLECTION_USERS = "users"
         const val COLLECTION_USERNAMES = "usernames"
+        const val COLLECTION_FRIENDS = "friends"
         const val COLLECTION_CHALLENGES = "challenges"
         const val COLLECTION_PARTICIPANTS = "participants"
         const val COLLECTION_MESSAGES = "messages"
@@ -532,6 +698,7 @@ class ChallengesRepository(
         const val FIELD_IS_COMPLETED_TODAY = "isCompletedToday"
         const val FIELD_LAST_COMPLETED_DATE = "lastCompletedDate"
         const val FIELD_COMPLETION_DATES = "completionDates"
+        const val FIELD_PROOF_IMAGE_URL = "proofImageUrl"
         const val FIELD_CHALLENGE_ID = "challengeId"
         const val FIELD_NAME = "name"
         const val FIELD_CATEGORY = "category"

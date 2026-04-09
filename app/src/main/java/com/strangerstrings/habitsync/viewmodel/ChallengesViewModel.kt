@@ -6,9 +6,11 @@ import com.strangerstrings.habitsync.data.Challenge
 import com.strangerstrings.habitsync.data.ChallengeInvite
 import com.strangerstrings.habitsync.data.ChallengeMessage
 import com.strangerstrings.habitsync.data.ChallengeParticipant
+import com.strangerstrings.habitsync.data.FriendUser
 import com.strangerstrings.habitsync.data.HabitCategory
 import com.strangerstrings.habitsync.data.repository.AuthRepository
 import com.strangerstrings.habitsync.data.repository.ChallengesRepository
+import com.strangerstrings.habitsync.data.repository.FriendsRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,6 +32,7 @@ data class ChallengesUiState(
     val isRoomLoading: Boolean = false,
     val isMarkingDone: Boolean = false,
     val currentUserId: String = "",
+    val friends: List<FriendUser> = emptyList(),
     val pendingInviteCount: Int = 0,
     val errorMessage: String? = null,
 )
@@ -37,6 +40,7 @@ data class ChallengesUiState(
 class ChallengesViewModel(
     private val authRepository: AuthRepository = AuthRepository(),
     private val repository: ChallengesRepository = ChallengesRepository(),
+    private val friendsRepository: FriendsRepository = FriendsRepository(),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(
         ChallengesUiState(
@@ -52,6 +56,7 @@ class ChallengesViewModel(
     init {
         observeChallenges()
         observeChallengeInvites()
+        observeFriends()
     }
 
     fun createChallenge(
@@ -150,20 +155,69 @@ class ChallengesViewModel(
         }
     }
 
-    fun markChallengeDone() {
+    fun markChallengeDone(proofImageBytes: ByteArray? = null) {
         val challengeId = _uiState.value.selectedChallenge?.id.orEmpty()
         if (challengeId.isBlank()) return
 
         viewModelScope.launch {
             _uiState.update { it.copy(isMarkingDone = true, errorMessage = null) }
             runCatching {
-                repository.markChallengeDone(challengeId)
+                repository.markChallengeDone(challengeId, proofImageBytes)
             }.onFailure { error ->
                 _uiState.update {
                     it.copy(errorMessage = error.message ?: "Failed to mark challenge done.")
                 }
             }
             _uiState.update { it.copy(isMarkingDone = false) }
+        }
+    }
+
+    fun updateChallenge(
+        challengeId: String,
+        name: String,
+        rule: String,
+        durationDays: Int,
+        category: HabitCategory,
+        inviteUsernames: List<String>,
+    ) {
+        if (challengeId.isBlank()) return
+        if (name.isBlank() || rule.isBlank()) {
+            _uiState.update { it.copy(errorMessage = "Challenge name and rule are required.") }
+            return
+        }
+        if (durationDays !in listOf(7, 14, 30)) {
+            _uiState.update { it.copy(errorMessage = "Duration must be 7, 14, or 30 days.") }
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isCreating = true, errorMessage = null) }
+            runCatching {
+                repository.updateChallenge(
+                    challengeId = challengeId,
+                    name = name.trim(),
+                    category = category,
+                    rule = rule.trim(),
+                    durationDays = durationDays,
+                    inviteUsernames = inviteUsernames,
+                )
+            }.onFailure { error ->
+                _uiState.update { it.copy(errorMessage = error.message ?: "Failed to update challenge.") }
+            }
+            _uiState.update { it.copy(isCreating = false) }
+        }
+    }
+
+    fun deleteChallenge(challengeId: String) {
+        if (challengeId.isBlank()) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isCreating = true, errorMessage = null) }
+            closeChallengeRoom()
+            runCatching { repository.deleteChallenge(challengeId) }
+                .onFailure { error ->
+                    _uiState.update { it.copy(errorMessage = error.message ?: "Failed to delete challenge.") }
+                }
+            _uiState.update { it.copy(isCreating = false) }
         }
     }
 
@@ -179,15 +233,40 @@ class ChallengesViewModel(
                     }
                 }
                 .collect { challenges ->
+                    val currentSelected = _uiState.value.selectedChallenge
+                    val updatedSelected = currentSelected?.let { selected ->
+                        challenges.firstOrNull { it.id == selected.id }
+                    }
                     challenges.forEach { challenge ->
                         runCatching { repository.syncChallengeState(challenge.id) }
                     }
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            challenges = challenges,
-                            errorMessage = null,
-                        )
+                    _uiState.update { state ->
+                        when {
+                            currentSelected != null && updatedSelected == null -> {
+                                state.copy(
+                                    isLoading = false,
+                                    challenges = challenges,
+                                    selectedChallenge = null,
+                                    participantLeaderboard = emptyList(),
+                                    chatMessages = emptyList(),
+                                    chatInput = "",
+                                    isRoomLoading = false,
+                                    errorMessage = if (currentSelected.creatorUserId == state.currentUserId) {
+                                        null
+                                    } else {
+                                        "Challenge deleted by the owner."
+                                    },
+                                )
+                            }
+                            else -> {
+                                state.copy(
+                                    isLoading = false,
+                                    challenges = challenges,
+                                    selectedChallenge = updatedSelected ?: state.selectedChallenge,
+                                    errorMessage = null,
+                                )
+                            }
+                        }
                     }
                     settleEndedChallenges(challenges)
                 }
@@ -200,6 +279,16 @@ class ChallengesViewModel(
                 .catch { }
                 .collect { invites: List<ChallengeInvite> ->
                     _uiState.update { it.copy(pendingInviteCount = invites.size) }
+                }
+        }
+    }
+
+    private fun observeFriends() {
+        viewModelScope.launch {
+            friendsRepository.observeFriends()
+                .catch { }
+                .collect { friends ->
+                    _uiState.update { it.copy(friends = friends) }
                 }
         }
     }

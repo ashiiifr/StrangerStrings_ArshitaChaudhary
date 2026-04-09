@@ -45,6 +45,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -230,6 +231,7 @@ fun HomeOverviewScreen(
                     HabitTodayCard(
                         habit = habit,
                         onMarkDone = { pendingProofHabitId = habit.id },
+                        isUploading = uiState.uploadingHabitId == habit.id,
                         onEditCustomHabit = {
                             editingHabit = habit
                             editedTitle = habit.title
@@ -392,6 +394,34 @@ fun HomeOverviewScreen(
                 onSelectDay = { selectedHistoryDay = it },
             )
         }
+    }
+
+    if (uiState.uploadingHabitId != null) {
+        AlertDialog(
+            onDismissRequest = {},
+            confirmButton = {},
+            containerColor = CharcoalMid,
+            textContentColor = Cream,
+            titleContentColor = Cream,
+            title = { Text("Processing proof") },
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    CircularProgressIndicator(
+                        color = OrangeGlow,
+                        strokeWidth = 3.dp,
+                        modifier = Modifier.size(26.dp),
+                    )
+                    Text(
+                        "Uploading your image and saving the habit. Please wait a moment.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Cream.copy(alpha = 0.82f),
+                    )
+                }
+            },
+        )
     }
 }
 
@@ -600,6 +630,7 @@ private fun EmptyHabitCard(
 private fun HabitTodayCard(
     habit: Habit,
     onMarkDone: () -> Unit,
+    isUploading: Boolean,
     onEditCustomHabit: (() -> Unit)?,
 ) {
     // Animate checkmark state change
@@ -727,7 +758,7 @@ private fun HabitTodayCard(
 
             Button(
                 onClick = onMarkDone,
-                enabled = !habit.isCompletedToday,
+                enabled = !habit.isCompletedToday && !isUploading,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(
@@ -737,10 +768,26 @@ private fun HabitTodayCard(
                     disabledContentColor = GoldSoft.copy(alpha = 0.6f),
                 ),
                 ) {
-                Text(
-                    text = if (habit.isCompletedToday) "✓ Completed Today" else "Mark Done",
-                    fontWeight = FontWeight.SemiBold,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    if (isUploading) {
+                        CircularProgressIndicator(
+                            color = CharcoalDark,
+                            strokeWidth = 2.5.dp,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                    Text(
+                        text = when {
+                            isUploading -> "Processing..."
+                            habit.isCompletedToday -> "✓ Completed Today"
+                            else -> "Mark Done"
+                        },
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
             }
 
             if (!habit.proofImageUrl.isNullOrBlank()) {

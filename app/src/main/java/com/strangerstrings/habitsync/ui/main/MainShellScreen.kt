@@ -232,6 +232,8 @@ fun MainShellScreen(
                     uiState = challengesUiState,
                     contentPadding = contentPadding,
                     onCreateChallenge = challengesViewModel::createChallenge,
+                    onUpdateChallenge = challengesViewModel::updateChallenge,
+                    onDeleteChallenge = challengesViewModel::deleteChallenge,
                     onOpenChallengeRoom = challengesViewModel::openChallengeRoom,
                     onCloseChallengeRoom = challengesViewModel::closeChallengeRoom,
                     onChatInputChange = challengesViewModel::onChatInputChange,
@@ -836,47 +838,47 @@ private fun ShellTopBar(
             label = "top_bar_title",
         ) { currentTab ->
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = "WELCOME BACK",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    letterSpacing = MaterialTheme.typography.labelLarge.letterSpacing,
-                )
-                val titleParts = currentTab.title.split(" ")
-                if (titleParts.size >= 2) {
                     Text(
-                        text = buildAnnotatedString {
-                            withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurface)) {
-                                append(titleParts.first())
-                            }
-                            for (i in 1 until titleParts.size) {
-                                append(" ")
-                                val isAccentWord = titleParts[i].lowercase() in listOf("and", "goals", "circle")
-                                withStyle(
-                                    SpanStyle(
-                                        color = if (isAccentWord) OrangeGlow else MaterialTheme.colorScheme.onSurface,
-                                    ),
-                                ) {
-                                    append(titleParts[i])
+                        text = "WELCOME BACK",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        letterSpacing = MaterialTheme.typography.labelLarge.letterSpacing,
+                    )
+                    val titleParts = currentTab.title.split(" ")
+                    if (titleParts.size >= 2) {
+                        Text(
+                            text = buildAnnotatedString {
+                                withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurface)) {
+                                    append(titleParts.first())
                                 }
-                            }
-                        },
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.ExtraBold,
-                    )
-                } else {
+                                for (i in 1 until titleParts.size) {
+                                    append(" ")
+                                    val isAccentWord = titleParts[i].lowercase() in listOf("and", "goals", "circle")
+                                    withStyle(
+                                        SpanStyle(
+                                            color = if (isAccentWord) OrangeGlow else MaterialTheme.colorScheme.onSurface,
+                                        ),
+                                    ) {
+                                        append(titleParts[i])
+                                    }
+                                }
+                            },
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                        )
+                    } else {
+                        Text(
+                            text = currentTab.title,
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.ExtraBold,
+                        )
+                    }
                     Text(
-                        text = currentTab.title,
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.ExtraBold,
+                        text = currentTab.subtitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                }
-                Text(
-                    text = currentTab.subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
         }
 

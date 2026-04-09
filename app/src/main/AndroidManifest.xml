@@ -5,7 +5,9 @@
     <application
         android:name=".HabitSyncApp"
         android:allowBackup="true"
+        android:icon="@drawable/app_logo"
         android:label="HabitSync"
+        android:roundIcon="@drawable/app_logo"
         android:usesCleartextTraffic="true"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">

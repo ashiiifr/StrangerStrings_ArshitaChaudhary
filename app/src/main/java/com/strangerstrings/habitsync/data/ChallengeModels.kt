@@ -21,6 +21,7 @@ data class ChallengeParticipant(
     val isCompletedToday: Boolean = false,
     val lastCompletedDate: Long? = null,
     val completionDates: List<Long> = emptyList(),
+    val proofImageUrl: String? = null,
 )
 
 data class ChallengeMessage(

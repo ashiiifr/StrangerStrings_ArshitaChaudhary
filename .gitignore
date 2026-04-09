@@ -9,3 +9,8 @@ backend/serviceAccountKey.json
 build/
 **/build/
 local.properties
+
+# Android build outputs
+*.apk
+*.aab
+app/release/

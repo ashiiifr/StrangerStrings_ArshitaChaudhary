@@ -45,16 +45,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.airbnb.lottie.compose.LottieAnimation
-import com.airbnb.lottie.compose.LottieCompositionSpec
-import com.airbnb.lottie.compose.animateLottieCompositionAsState
-import com.airbnb.lottie.compose.rememberLottieComposition
+import coil.compose.AsyncImage
 import com.strangerstrings.habitsync.viewmodel.OnboardingUiState
 import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
@@ -62,7 +60,7 @@ import kotlin.math.absoluteValue
 private data class OnboardingPage(
     val title: String,
     val subtitle: String,
-    val lottieUrl: String,
+    val imageAssetPath: String,
     val fallbackIcon: ImageVector,
 )
 
@@ -70,25 +68,25 @@ private val pages = listOf(
     OnboardingPage(
         title = "Design Better Days With Small Daily Wins",
         subtitle = "Track meaningful habits and keep your momentum visible every single day.",
-        lottieUrl = "https://lottie.host/4cf6d68e-7197-4b01-b7cb-7948a98fb54a/N5m0wLa8cv.json",
+        imageAssetPath = "onb/1.png",
         fallbackIcon = Icons.Default.AutoGraph,
     ),
     OnboardingPage(
         title = "Stay Honest With Proof-Backed Check-ins",
         subtitle = "Attach quick photo proof so each streak reflects real consistency.",
-        lottieUrl = "https://lottie.host/9f69b74c-078b-447d-aa8a-033f8dfb4fdb/wXGndv0o2A.json",
+        imageAssetPath = "onb/2.png",
         fallbackIcon = Icons.Default.Image,
     ),
     OnboardingPage(
         title = "Compete On Leaderboards And Keep Climbing",
         subtitle = "Challenge friends, build score, and rise with disciplined action.",
-        lottieUrl = "https://lottie.host/ce2f1db6-f7d4-42b4-a5d4-b4a67f8fec4e/JzebQ7QjJR.json",
+        imageAssetPath = "onb/3.png",
         fallbackIcon = Icons.Default.EmojiEvents,
     ),
     OnboardingPage(
         title = "Build A Stronger Version Of Yourself",
         subtitle = "HabitSync helps consistency feel social, fun, and sustainable.",
-        lottieUrl = "https://lottie.host/e4ecf96f-fc3f-4a48-8cb4-c3a47ec95bf2/kM5dix0ehX.json",
+        imageAssetPath = "onb/4.png",
         fallbackIcon = Icons.Default.SelfImprovement,
     ),
 )
@@ -261,12 +259,6 @@ private fun OnboardingIllustration(
     pageData: OnboardingPage,
     pageOffset: Float,
 ) {
-    val composition by rememberLottieComposition(LottieCompositionSpec.Url(pageData.lottieUrl))
-    val progress by animateLottieCompositionAsState(
-        composition = composition,
-        iterations = Int.MAX_VALUE,
-    )
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -280,22 +272,14 @@ private fun OnboardingIllustration(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        if (composition != null) {
-            LottieAnimation(
-                composition = composition,
-                progress = { progress },
-                modifier = Modifier
-                    .fillMaxSize(0.88f)
-                    .scale(1f - (pageOffset * 0.04f)),
-            )
-        } else {
-            Icon(
-                imageVector = pageData.fallbackIcon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(92.dp),
-            )
-        }
+        AsyncImage(
+            model = onboardingAssetModel(pageData.imageAssetPath),
+            contentDescription = null,
+            contentScale = ContentScale.FillHeight,
+            modifier = Modifier
+                .fillMaxSize()
+                .scale(1f - (pageOffset * 0.04f)),
+        )
     }
 }
 
@@ -332,3 +316,5 @@ private fun PagerIndicator(
         }
     }
 }
+
+private fun onboardingAssetModel(path: String): String = "file:///android_asset/$path"
